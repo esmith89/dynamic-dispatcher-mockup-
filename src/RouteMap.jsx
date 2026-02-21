@@ -13,6 +13,7 @@ const RouteMap = ({ routes }) => {
       scrollWheelZoom={false} 
       style={{ height: "100%", width: "100%" }}
       className="z-0"
+      preferCanvas={true} // <-- THIS FIXES THE TAILWIND SVG CONFLICT
     >
       <TileLayer
         attribution='&copy; OpenStreetMap'
