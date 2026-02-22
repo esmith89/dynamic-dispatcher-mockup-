@@ -22,18 +22,34 @@ const RouteMap = ({ routes }) => {
       
       {routes.map((route, routeIdx) => (
         <React.Fragment key={routeIdx}>
-          {/* The Route Line */}
+          
+          {/* The Background Stops (Fainter dots not involved in the change) */}
+          {route.backgroundStops && route.backgroundStops.map((pos, idx) => (
+            <CircleMarker 
+              key={`bg-${routeIdx}-${idx}`} 
+              center={pos}
+              radius={4} // Increased from 3
+              pathOptions={{ 
+                fillColor: route.color, 
+                color: route.color, 
+                weight: 0, // No border
+                fillOpacity: 0.6 // Increased from 0.25 to make them much more visible
+              }}
+            />
+          ))}
+
+          {/* The Route Line for Involved Stops */}
           <Polyline 
             positions={route.path} 
             pathOptions={{ color: route.color, weight: 4, opacity: 0.8 }} 
           />
           
-          {/* The Stops (Colored Dots) */}
+          {/* The Involved Stops (Highlighted Colored Dots) */}
           {route.path.map((pos, idx) => (
             <CircleMarker 
-              key={`${routeIdx}-${idx}`} 
+              key={`path-${routeIdx}-${idx}`} 
               center={pos}
-              radius={6} // Size of the dot
+              radius={6} // Larger, prominent size
               pathOptions={{ 
                 fillColor: route.color, 
                 color: 'white', // White border around the dot
@@ -43,7 +59,7 @@ const RouteMap = ({ routes }) => {
             >
               <Popup>
                 <strong>{route.id}</strong><br/>
-                Stop #{idx + 1}
+                Highlighted Stop #{idx + 1}
               </Popup>
             </CircleMarker>
           ))}

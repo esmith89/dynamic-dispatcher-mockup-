@@ -4,13 +4,13 @@ import { Check, X, ArrowRight, Truck } from 'lucide-react';
 const routeOptions = ['06A', '06B', '06C', '07A', '07B', '07C', '08A', '08B', '08C'];
 const streetNames = ['N 13th St', 'Locust St', 'Ash St', 'Chestnut St', 'Ohio St', 'Hulman St', 'S 25th St', 'Poplar St'];
 
-const SuggestionTable = ({ isEditable, activeStatus, activeKickoffId }) => {
+const SuggestionTable = ({ isEditable, activeStatus, activeKickoffId, mapRoutes }) => {
   const [suggestions, setSuggestions] = useState([]);
 
   useEffect(() => {
     const generateRandomData = () => {
       const numberOfItems = 8;
-      const currentRoutePool = activeStatus === 'Planning' ? ['06A', '06B', '07C'] : routeOptions;
+      const currentRoutePool = activeStatus === 'Planning' ? (mapRoutes || ['06A', '06B', '07C']) : routeOptions;
       const newData = [];
 
       for (let i = 0; i < numberOfItems; i++) {
@@ -32,14 +32,17 @@ const SuggestionTable = ({ isEditable, activeStatus, activeKickoffId }) => {
         const isSingleAddress = Math.random() < 0.35;
         let addressDisplay = "";
         let stopsDisplay = 0;
+        let uowDisplay = 0;
 
         if (isSingleAddress) {
           addressDisplay = `${startNum} ${street}`;
           stopsDisplay = 1;
+          uowDisplay = Math.floor(Math.random() * 5) + 2; // Always higher than 1
         } else {
           const endNum = startNum + Math.floor(Math.random() * 500) + 50;
           addressDisplay = `${startNum} - ${endNum} ${street}`;
           stopsDisplay = Math.floor(Math.random() * 10) + 2;
+          uowDisplay = stopsDisplay + Math.floor(Math.random() * 10) + 2; // Always higher than stops
         }
 
         newData.push({
@@ -47,7 +50,9 @@ const SuggestionTable = ({ isEditable, activeStatus, activeKickoffId }) => {
           from: fromRoute,
           to: toRoute,
           address: addressDisplay,
+          isSingleAddress: isSingleAddress,
           stops: stopsDisplay,
+          uow: uowDisplay,
           status: randomStatus,
           manualTo: ''
         });
@@ -55,7 +60,7 @@ const SuggestionTable = ({ isEditable, activeStatus, activeKickoffId }) => {
       return newData.sort((a, b) => a.from.localeCompare(b.from));
     };
     setSuggestions(generateRandomData());
-  }, [activeKickoffId, activeStatus]);
+  }, [activeKickoffId, activeStatus, mapRoutes]);
 
   const handleAction = (id, newStatus) => {
     if (activeStatus !== 'Planning') return;
@@ -87,7 +92,12 @@ const SuggestionTable = ({ isEditable, activeStatus, activeKickoffId }) => {
                 <td className="px-3 py-3 font-bold text-blue-600 flex items-center gap-1"><ArrowRight size={10}/> {item.to}</td>
                 <td className="px-3 py-3">
                   <div className="font-bold text-gray-700">{item.address}</div>
-                  <div className="text-[10px] text-gray-400">{item.stops} stop{item.stops !== 1 ? 's' : ''}</div>
+                  <div className="flex items-center gap-3 mt-0.5">
+                    {!item.isSingleAddress && (
+                      <div className="text-[10px] text-gray-400 flex items-center gap-1"><Truck size={10} /> {item.stops} stops</div>
+                    )}
+                    <div className="text-[10px] font-bold text-indigo-500">UOW: {item.uow}</div>
+                  </div>
                 </td>
                 <td className="px-3 py-3 text-center">
                   <div className="flex justify-center gap-2">
