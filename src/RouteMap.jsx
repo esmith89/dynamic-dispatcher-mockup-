@@ -3,8 +3,8 @@ import { MapContainer, TileLayer, CircleMarker, Popup, Polyline } from 'react-le
 import 'leaflet/dist/leaflet.css';
 
 const RouteMap = ({ routes }) => {
-  // Center map on the first point of the first route
-  const center = routes?.[0]?.path?.[0] || [39.4667, -87.4139]; 
+  // Center map on the depot
+  const center = [39.4667, -87.4139]; 
 
   return (
     <MapContainer 
@@ -13,58 +13,72 @@ const RouteMap = ({ routes }) => {
       scrollWheelZoom={false} 
       style={{ height: "100%", width: "100%" }}
       className="z-0"
-      preferCanvas={true} // <-- THIS FIXES THE TAILWIND SVG CONFLICT
+      preferCanvas={true} 
     >
       <TileLayer
         attribution='&copy; OpenStreetMap'
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
       
-      {routes.map((route, routeIdx) => (
-        <React.Fragment key={routeIdx}>
-          
-          {/* The Background Stops (Fainter dots not involved in the change) */}
-          {route.backgroundStops && route.backgroundStops.map((pos, idx) => (
-            <CircleMarker 
-              key={`bg-${routeIdx}-${idx}`} 
-              center={pos}
-              radius={4} // Increased from 3
-              pathOptions={{ 
-                fillColor: route.color, 
-                color: route.color, 
-                weight: 0, // No border
-                fillOpacity: 0.6 // Increased from 0.25 to make them much more visible
-              }}
-            />
-          ))}
+      {routes.map((route, routeIdx) => {
+        // Combine all stops (Depot + Faint Background Stops + Highlighted Moved Stops)
+        const allStopsForRoute = [
+          center, // Start the route line at the depot
+          ...(route.backgroundStops || []),
+          ...(route.movedStops?.map(m => m.coord) || [])
+        ];
 
-          {/* The Route Line for Involved Stops */}
-          <Polyline 
-            positions={route.path} 
-            pathOptions={{ color: route.color, weight: 4, opacity: 0.8 }} 
-          />
-          
-          {/* The Involved Stops (Highlighted Colored Dots) */}
-          {route.path.map((pos, idx) => (
-            <CircleMarker 
-              key={`path-${routeIdx}-${idx}`} 
-              center={pos}
-              radius={6} // Larger, prominent size
+        return (
+          <React.Fragment key={routeIdx}>
+            
+            {/* The single, faint continuous line running through all stops for the route */}
+            <Polyline 
+              positions={allStopsForRoute} 
               pathOptions={{ 
-                fillColor: route.color, 
-                color: 'white', // White border around the dot
-                weight: 2,
-                fillOpacity: 1 
-              }}
-            >
-              <Popup>
-                <strong>{route.id}</strong><br/>
-                Highlighted Stop #{idx + 1}
-              </Popup>
-            </CircleMarker>
-          ))}
-        </React.Fragment>
-      ))}
+                color: route.color, 
+                weight: 1.5, 
+                opacity: 0.35 // Faint opacity
+              }} 
+            />
+
+            {/* The Background Stops (Fainter dots not involved in the change) */}
+            {route.backgroundStops && route.backgroundStops.map((pos, idx) => (
+              <CircleMarker 
+                key={`bg-${routeIdx}-${idx}`} 
+                center={pos}
+                radius={4}
+                pathOptions={{ 
+                  fillColor: route.color, 
+                  color: route.color, 
+                  weight: 0, 
+                  fillOpacity: 0.6 
+                }}
+              />
+            ))}
+
+            {/* The Moved Stops Themselves (Highlighted Colored Dots) */}
+            {route.movedStops && route.movedStops.map((mStop, idx) => (
+              <CircleMarker 
+                key={`moved-${routeIdx}-${idx}`} 
+                center={mStop.coord}
+                radius={6} // Larger, prominent size
+                pathOptions={{ 
+                  fillColor: route.color, 
+                  color: 'white', // White border around the dot
+                  weight: 2,
+                  fillOpacity: 1 
+                }}
+              >
+                <Popup>
+                  <strong>{route.id}</strong><br/>
+                  Transferred Stop
+                </Popup>
+              </CircleMarker>
+            ))}
+            
+          </React.Fragment>
+        );
+      })}
     </MapContainer>
   );
 };

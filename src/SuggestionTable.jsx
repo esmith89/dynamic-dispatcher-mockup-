@@ -2,65 +2,16 @@ import React, { useState, useEffect } from 'react';
 import { Check, X, ArrowRight, Truck } from 'lucide-react';
 
 const routeOptions = ['06A', '06B', '06C', '07A', '07B', '07C', '08A', '08B', '08C'];
-const streetNames = ['N 13th St', 'Locust St', 'Ash St', 'Chestnut St', 'Ohio St', 'Hulman St', 'S 25th St', 'Poplar St'];
 
-const SuggestionTable = ({ isEditable, activeStatus, activeKickoffId, mapRoutes }) => {
+const SuggestionTable = ({ isEditable, activeStatus, activeKickoffId, mapRoutes, suggestionsData }) => {
   const [suggestions, setSuggestions] = useState([]);
 
   useEffect(() => {
-    const generateRandomData = () => {
-      const numberOfItems = 8;
-      const currentRoutePool = activeStatus === 'Planning' ? (mapRoutes || ['06A', '06B', '07C']) : routeOptions;
-      const newData = [];
-
-      for (let i = 0; i < numberOfItems; i++) {
-        const fromRoute = currentRoutePool[Math.floor(Math.random() * currentRoutePool.length)];
-        let toRoute = currentRoutePool[Math.floor(Math.random() * currentRoutePool.length)];
-        while (toRoute === fromRoute) toRoute = currentRoutePool[Math.floor(Math.random() * currentRoutePool.length)];
-
-        let randomStatus = 'none';
-        if (activeStatus === 'Completed') {
-          randomStatus = Math.random() > 0.3 ? 'accepted' : 'rejected';
-        } else if (activeStatus === 'Planning') {
-          randomStatus = 'accepted';
-        }
-
-        const street = streetNames[Math.floor(Math.random() * streetNames.length)];
-        const startNum = Math.floor(Math.random() * 2000) + 100;
-        
-        // Randomly decide if this is a single address (~35% chance) or a range
-        const isSingleAddress = Math.random() < 0.35;
-        let addressDisplay = "";
-        let stopsDisplay = 0;
-        let uowDisplay = 0;
-
-        if (isSingleAddress) {
-          addressDisplay = `${startNum} ${street}`;
-          stopsDisplay = 1;
-          uowDisplay = Math.floor(Math.random() * 5) + 2; // Always higher than 1
-        } else {
-          const endNum = startNum + Math.floor(Math.random() * 500) + 50;
-          addressDisplay = `${startNum} - ${endNum} ${street}`;
-          stopsDisplay = Math.floor(Math.random() * 10) + 2;
-          uowDisplay = stopsDisplay + Math.floor(Math.random() * 10) + 2; // Always higher than stops
-        }
-
-        newData.push({
-          id: i + 1,
-          from: fromRoute,
-          to: toRoute,
-          address: addressDisplay,
-          isSingleAddress: isSingleAddress,
-          stops: stopsDisplay,
-          uow: uowDisplay,
-          status: randomStatus,
-          manualTo: ''
-        });
-      }
-      return newData.sort((a, b) => a.from.localeCompare(b.from));
-    };
-    setSuggestions(generateRandomData());
-  }, [activeKickoffId, activeStatus, mapRoutes]);
+    // Populate the table using the exact data synced to the map dots
+    if (suggestionsData) {
+      setSuggestions(JSON.parse(JSON.stringify(suggestionsData))); // Deep copy for local edits
+    }
+  }, [suggestionsData, activeKickoffId, activeStatus]);
 
   const handleAction = (id, newStatus) => {
     if (activeStatus !== 'Planning') return;

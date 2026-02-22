@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Search, 
   Calendar, 
@@ -13,34 +13,53 @@ import {
 import SuggestionTable from './SuggestionTable';
 import RouteMap from './RouteMap';
 
-// Helper to generate a stable cluster of random background stops
-const generateStops = (seed, center, count, radius) => {
-  let s = seed;
-  const random = () => {
-    const x = Math.sin(s++) * 10000;
+const seededRandom = (s) => {
+  let seed = s;
+  return () => {
+    const x = Math.sin(seed++) * 10000;
     return x - Math.floor(x);
   };
-  const stops = [];
-  for (let i = 0; i < count; i++) {
-    const lat = center[0] + (random() - 0.5) * radius;
-    const lng = center[1] + (random() - 0.5) * radius * 1.3;
-    stops.push([lat, lng]);
-  }
-  return stops;
 };
 
-// Generate between 90 and 140 background stops for each base route territory
-const BG_STOPS = {
-  '06A': generateStops(1, [39.4900, -87.4100], 110, 0.03),
-  '06B': generateStops(2, [39.4400, -87.4100], 120, 0.03),
-  '06C': generateStops(3, [39.4850, -87.3900], 95, 0.025),
-  '07A': generateStops(4, [39.4850, -87.4200], 130, 0.035),
-  '07B': generateStops(5, [39.4450, -87.4200], 100, 0.03),
-  '07C': generateStops(6, [39.4600, -87.3800], 140, 0.035),
-  '08A': generateStops(7, [39.4400, -87.4000], 115, 0.03),
-  '08B': generateStops(8, [39.4650, -87.3900], 125, 0.035),
-  '08C': generateStops(9, [39.4600, -87.4000], 105, 0.03),
+const streetNames = ['N 13th St', 'Locust St', 'Ash St', 'Chestnut St', 'Ohio St', 'Hulman St', 'S 25th St', 'Poplar St'];
+const SIZE = 0.035; 
+const DEPOT_COORD = [39.4667, -87.4139];
+
+const ROUTE_CENTERS = {
+  '06A': [39.4667 + SIZE, -87.4139 - SIZE*1.3],
+  '06B': [39.4667 + SIZE*1.1, -87.4139 + 0.005],
+  '06C': [39.4667 + SIZE*0.9, -87.4139 + SIZE*1.4],
+  '07A': [39.4667 - 0.005, -87.4139 - SIZE*1.2],
+  '07B': [39.4667, -87.4139],
+  '07C': [39.4667 + 0.005, -87.4139 + SIZE*1.3],
+  '08A': [39.4667 - SIZE*1.1, -87.4139 - SIZE*1.4],
+  '08B': [39.4667 - SIZE*0.9, -87.4139 - 0.005],
+  '08C': [39.4667 - SIZE, -87.4139 + SIZE*1.2],
 };
+
+const ADJACENCY = {
+  '06A': ['06B', '07A', '07B'],
+  '06B': ['06A', '06C', '07A', '07B', '07C'],
+  '06C': ['06B', '07B', '07C'],
+  '07A': ['06A', '06B', '07B', '08A', '08B'],
+  '07B': ['06A', '06B', '06C', '07A', '07C', '08A', '08B', '08C'],
+  '07C': ['06B', '06C', '07B', '08B', '08C'],
+  '08A': ['07A', '07B', '08B'],
+  '08B': ['07A', '07B', '07C', '08A', '08C'],
+  '08C': ['07B', '07C', '08B'],
+};
+
+const baseRoutesInfo = [
+  { id: '06A', color: '#f97316', defaultMiles: 91.5, cost: 365 },
+  { id: '06B', color: '#8b5cf6', defaultMiles: 95.0, cost: 385 },
+  { id: '06C', color: '#db2777', defaultMiles: 78.2, cost: 310 },
+  { id: '07A', color: '#16a34a', defaultMiles: 110.5, cost: 450 },
+  { id: '07B', color: '#ca8a04', defaultMiles: 65.0, cost: 260 },
+  { id: '07C', color: '#2563eb', defaultMiles: 105.0, cost: 450 },
+  { id: '08A', color: '#dc2626', defaultMiles: 82.4, cost: 330 },
+  { id: '08B', color: '#0d9488', defaultMiles: 88.9, cost: 350 },
+  { id: '08C', color: '#4f46e5', defaultMiles: 75.3, cost: 310 },
+];
 
 const App = () => {
   const [kickoffs] = useState([
@@ -56,11 +75,9 @@ const App = () => {
     { id: 'DD_01_02182026_0330_4780', displayTime: '03:30 AM', status: 'Completed', date: 'Feb 18' },
   ]);
 
-  const [activeKickoffId, setActiveKickoffId] = useState('DD_10_02182026_0900_4780');
-  const [selectedRouteIds, setSelectedRouteIds] = useState(['06A', '06B', '07C']);
-  
+  const [activeKickoffId, setActiveKickoffId] = useState(kickoffs[0].id);
+  const [selectedRouteIds, setSelectedRouteIds] = useState([]);
   const [isTableExpanded, setIsTableExpanded] = useState(false);
-  
   const [isRouteFilterOpen, setIsRouteFilterOpen] = useState(false);
   const [routeFilters, setRouteFilters] = useState([]);
 
@@ -68,92 +85,193 @@ const App = () => {
   const isEditable = activeKickoffId === mostRecentId;
   const activeStatus = kickoffs.find(k => k.id === activeKickoffId)?.status;
 
-  const STOPS = {
-    depot: [39.4667, -87.4139], n1: [39.4900, -87.4100], n2: [39.4850, -87.4200], n3: [39.4800, -87.4000],
-    s1: [39.4400, -87.4100], s2: [39.4450, -87.4200], s3: [39.4350, -87.4000], e1: [39.4600, -87.3800],
-    e2: [39.4650, -87.3900], out1: [39.4800, -87.4300], out2: [39.4500, -87.4200]
-  };
+  const variations = useMemo(() => {
+    const vars = [];
+    const rnd = seededRandom(42); 
 
-  const variations = [
-    { // Variation 0
-      mapRoutes: ['06A', '06B', '07C'],
-      beforeStats: [
-        { id: '06A', miles: 85.1, cost: 340, status: 'Feasible', color: '#f97316', bgClass: 'bg-[#f97316]' },
-        { id: '06B', miles: 92.3, cost: 375, status: 'Feasible', color: '#8b5cf6', bgClass: 'bg-[#8b5cf6]' },
-        { id: '07C', miles: 142.4, cost: 610, status: 'Infeasible', color: '#2563eb', bgClass: 'bg-[#2563eb]', isRed: true }
-      ],
-      afterStats: [
-        { id: '06A', miles: 91.5, cost: 365, status: 'Feasible', color: '#f97316', bgClass: 'bg-[#f97316]' },
-        { id: '06B', miles: 95.0, cost: 385, status: 'Feasible', color: '#8b5cf6', bgClass: 'bg-[#8b5cf6]' },
-        { id: '07C', miles: 105.0, cost: 450, status: 'Feasible', color: '#2563eb', bgClass: 'bg-[#2563eb]' }
-      ],
-      totalsBefore: { miles: 319.8, cost: 1325 },
-      totalsAfter: { miles: 291.5, cost: 1200, milesDiff: '-28.3', costDiff: '-$125' },
-      routesBefore: [
-        { id: '06A', color: '#f97316', path: [STOPS.depot, STOPS.out1, STOPS.n2, STOPS.n1, STOPS.n3], backgroundStops: BG_STOPS['06A'] },
-        { id: '06B', color: '#8b5cf6', path: [STOPS.depot, STOPS.out2, STOPS.s2, STOPS.s1, STOPS.s3], backgroundStops: BG_STOPS['06B'] },
-        { id: '07C', color: '#2563eb', path: [STOPS.depot, STOPS.e1, STOPS.out1, STOPS.e2], backgroundStops: BG_STOPS['07C'] }
-      ],
-      routesAfter: [
-        { id: '06A', color: '#f97316', path: [STOPS.depot, STOPS.n1, STOPS.n2, STOPS.n3], backgroundStops: BG_STOPS['06A'] },
-        { id: '06B', color: '#8b5cf6', path: [STOPS.depot, STOPS.s1, STOPS.s2, STOPS.s3], backgroundStops: BG_STOPS['06B'] },
-        { id: '07C', color: '#2563eb', path: [STOPS.depot, STOPS.e1, STOPS.e2], backgroundStops: BG_STOPS['07C'] }
-      ]
-    },
-    { // Variation 1
-      mapRoutes: ['07A', '08A', '08B'],
-      beforeStats: [
-        { id: '07A', miles: 110.5, cost: 450, status: 'Feasible', color: '#16a34a', bgClass: 'bg-[#16a34a]' },
-        { id: '08A', miles: 82.4, cost: 330, status: 'Feasible', color: '#dc2626', bgClass: 'bg-[#dc2626]' },
-        { id: '08B', miles: 120.0, cost: 500, status: 'Infeasible', color: '#0d9488', bgClass: 'bg-[#0d9488]', isRed: true }
-      ],
-      afterStats: [
-        { id: '07A', miles: 100.0, cost: 400, status: 'Feasible', color: '#16a34a', bgClass: 'bg-[#16a34a]' },
-        { id: '08A', miles: 90.0, cost: 360, status: 'Feasible', color: '#dc2626', bgClass: 'bg-[#dc2626]' },
-        { id: '08B', miles: 88.9, cost: 350, status: 'Feasible', color: '#0d9488', bgClass: 'bg-[#0d9488]' }
-      ],
-      totalsBefore: { miles: 312.9, cost: 1280 },
-      totalsAfter: { miles: 278.9, cost: 1110, milesDiff: '-34.0', costDiff: '-$170' },
-      routesBefore: [
-        { id: '07A', color: '#16a34a', path: [STOPS.depot, STOPS.n1, STOPS.out1, STOPS.n3], backgroundStops: BG_STOPS['07A'] },
-        { id: '08A', color: '#dc2626', path: [STOPS.depot, STOPS.s1, STOPS.s3, STOPS.out2], backgroundStops: BG_STOPS['08A'] },
-        { id: '08B', color: '#0d9488', path: [STOPS.depot, STOPS.e2, STOPS.e1, STOPS.n2], backgroundStops: BG_STOPS['08B'] }
-      ],
-      routesAfter: [
-        { id: '07A', color: '#16a34a', path: [STOPS.depot, STOPS.n1, STOPS.n3, STOPS.n2], backgroundStops: BG_STOPS['07A'] },
-        { id: '08A', color: '#dc2626', path: [STOPS.depot, STOPS.s1, STOPS.s3, STOPS.out2], backgroundStops: BG_STOPS['08A'] },
-        { id: '08B', color: '#0d9488', path: [STOPS.depot, STOPS.e2, STOPS.e1], backgroundStops: BG_STOPS['08B'] }
-      ]
-    },
-    { // Variation 2
-      mapRoutes: ['06C', '07B', '08C'],
-      beforeStats: [
-        { id: '06C', miles: 78.2, cost: 310, status: 'Feasible', color: '#db2777', bgClass: 'bg-[#db2777]' },
-        { id: '07B', miles: 65.0, cost: 260, status: 'Feasible', color: '#ca8a04', bgClass: 'bg-[#ca8a04]' },
-        { id: '08C', miles: 105.0, cost: 420, status: 'Infeasible', color: '#4f46e5', bgClass: 'bg-[#4f46e5]', isRed: true }
-      ],
-      afterStats: [
-        { id: '06C', miles: 70.0, cost: 280, status: 'Feasible', color: '#db2777', bgClass: 'bg-[#db2777]' },
-        { id: '07B', miles: 75.0, cost: 300, status: 'Feasible', color: '#ca8a04', bgClass: 'bg-[#ca8a04]' },
-        { id: '08C', miles: 75.3, cost: 310, status: 'Feasible', color: '#4f46e5', bgClass: 'bg-[#4f46e5]' }
-      ],
-      totalsBefore: { miles: 248.2, cost: 990 },
-      totalsAfter: { miles: 220.3, cost: 890, milesDiff: '-27.9', costDiff: '-$100' },
-      routesBefore: [
-        { id: '06C', color: '#db2777', path: [STOPS.depot, STOPS.n2, STOPS.n3], backgroundStops: BG_STOPS['06C'] },
-        { id: '07B', color: '#ca8a04', path: [STOPS.depot, STOPS.out2, STOPS.s1], backgroundStops: BG_STOPS['07B'] },
-        { id: '08C', color: '#4f46e5', path: [STOPS.depot, STOPS.out1, STOPS.e2, STOPS.e1], backgroundStops: BG_STOPS['08C'] }
-      ],
-      routesAfter: [
-        { id: '06C', color: '#db2777', path: [STOPS.depot, STOPS.n2, STOPS.n3], backgroundStops: BG_STOPS['06C'] },
-        { id: '07B', color: '#ca8a04', path: [STOPS.depot, STOPS.s1, STOPS.out2], backgroundStops: BG_STOPS['07B'] },
-        { id: '08C', color: '#4f46e5', path: [STOPS.depot, STOPS.e2, STOPS.e1], backgroundStops: BG_STOPS['08C'] }
-      ]
+    for (let k = 0; k < 10; k++) {
+      const numRoutes = Math.floor(rnd() * 7) + 2; 
+      const shuffledBase = [...baseRoutesInfo].sort(() => rnd() - 0.5);
+      
+      const subset = [shuffledBase[0]];
+      while(subset.length < numRoutes) {
+        const nextRoute = shuffledBase.find(r => 
+          !subset.includes(r) && subset.some(subR => ADJACENCY[subR.id].includes(r.id))
+        );
+        if(nextRoute) subset.push(nextRoute);
+        else break;
+      }
+      
+      const mapRoutes = subset.map(r => r.id);
+      
+      // dynamically generate organic Voronoi for this specific subset
+      const activeBGStops = {};
+      subset.forEach(r => activeBGStops[r.id] = []);
+      
+      // Generate points around each active route's center with a randomized radius.
+      // This creates an irregular, non-circular outer boundary while keeping perfect internal borders!
+      for (const genRoute of subset) {
+          const genCenter = ROUTE_CENTERS[genRoute.id];
+          const routeRadius = 0.035 + rnd() * 0.025; // Variable reach per route (0.035 to 0.060 degrees)
+          const numPoints = 250 + Math.floor(rnd() * 100);
+
+          for (let i = 0; i < numPoints; i++) {
+              const r = Math.sqrt(rnd()) * routeRadius;
+              const theta = rnd() * 2 * Math.PI;
+              const lat = genCenter[0] + r * Math.cos(theta);
+              const lng = genCenter[1] + r * Math.sin(theta) * 1.3;
+
+              let closestId = subset[0].id;
+              let minDist = Infinity;
+              for (const route of subset) {
+                  const center = ROUTE_CENTERS[route.id];
+                  const dist = Math.pow(lat - center[0], 2) + Math.pow((lng - center[1])/1.3, 2);
+                  if (dist < minDist) {
+                      minDist = dist;
+                      closestId = route.id;
+                  }
+              }
+              activeBGStops[closestId].push([lat, lng]);
+          }
+      }
+
+      // GENERATE SUGGESTIONS DATA TIED DIRECTLY TO MAP TRANSFERS
+      const suggestions = [];
+      const transferMap = {}; // Tracks exactly how many stops to move on map
+      const numSuggestions = Math.floor(rnd() * 3) + 5; // 5 to 7 suggestions
+      const kickoffStatus = kickoffs[k].status;
+
+      for (let i = 0; i < numSuggestions; i++) {
+        const fromRoute = subset[Math.floor(rnd() * subset.length)];
+        const validNeighbors = subset.filter(r => r.id !== fromRoute.id && ADJACENCY[fromRoute.id].includes(r.id));
+        if (validNeighbors.length === 0) continue; 
+        const toRoute = validNeighbors[Math.floor(rnd() * validNeighbors.length)];
+
+        const isSingleAddress = rnd() < 0.35;
+        const street = streetNames[Math.floor(rnd() * streetNames.length)];
+        const startNum = Math.floor(rnd() * 2000) + 100;
+        
+        let stopsCount = 1;
+        let addressDisplay = "";
+
+        if (isSingleAddress) {
+          addressDisplay = `${startNum} ${street}`;
+          stopsCount = 1;
+        } else {
+          const endNum = startNum + Math.floor(rnd() * 100) + 10;
+          addressDisplay = `${startNum} - ${endNum} ${street}`;
+          stopsCount = Math.floor(rnd() * 4) + 2; // 2 to 5 stops
+        }
+
+        const transKey = `${fromRoute.id}->${toRoute.id}`;
+        if(!transferMap[transKey]) transferMap[transKey] = { from: fromRoute.id, to: toRoute.id, count: 0 };
+        transferMap[transKey].count += stopsCount;
+
+        let randomStatus = 'none';
+        if (kickoffStatus === 'Completed') randomStatus = rnd() > 0.3 ? 'accepted' : 'rejected';
+        else if (kickoffStatus === 'Planning') randomStatus = 'accepted';
+
+        suggestions.push({
+          id: i + 1,
+          from: fromRoute.id,
+          to: toRoute.id,
+          address: addressDisplay,
+          isSingleAddress,
+          stops: stopsCount,
+          uow: stopsCount + Math.floor(rnd() * 5) + 1,
+          status: randomStatus,
+          manualTo: ''
+        });
+      }
+
+      // Execute transfers on the map based EXACTLY on suggestion amounts
+      const transfers = [];
+      const allMovedCoords = [];
+
+      Object.values(transferMap).forEach(t => {
+        const availableStops = activeBGStops[t.from].filter(c => !allMovedCoords.includes(c));
+        const toCenter = ROUTE_CENTERS[t.to];
+        
+        // Find dots perfectly on the border
+        availableStops.sort((a, b) => {
+          const distA = Math.pow(a[0] - toCenter[0], 2) + Math.pow((a[1] - toCenter[1])/1.3, 2);
+          const distB = Math.pow(b[0] - toCenter[0], 2) + Math.pow((b[1] - toCenter[1])/1.3, 2);
+          return distA - distB;
+        });
+        
+        const movedForThisTransfer = availableStops.slice(0, t.count); // Shave exact match amount
+        movedForThisTransfer.forEach(s => allMovedCoords.push(s));
+
+        transfers.push({
+          fromId: t.from,
+          toId: t.to,
+          stops: movedForThisTransfer
+        });
+      });
+
+      const routesBefore = [];
+      const routesAfter = [];
+      let totalsBefore = { miles: 0, cost: 0 };
+      let totalsAfter = { miles: 0, cost: 0 };
+      const beforeStats = [];
+      const afterStats = [];
+
+      subset.forEach(route => {
+        const movedOut = transfers.filter(t => t.fromId === route.id).flatMap(t => t.stops.map(coord => ({
+          coord
+        })));
+        
+        const movedIn = transfers.filter(t => t.toId === route.id).flatMap(t => t.stops.map(coord => ({
+          coord
+        })));
+
+        const baseBgStops = activeBGStops[route.id].filter(c => !allMovedCoords.includes(c));
+
+        routesBefore.push({
+          id: route.id, color: route.color,
+          backgroundStops: baseBgStops, movedStops: movedOut
+        });
+
+        routesAfter.push({
+          id: route.id, color: route.color,
+          backgroundStops: baseBgStops, movedStops: movedIn
+        });
+
+        const isOverloaded = movedOut.length > 0; 
+        const beforeMiles = route.defaultMiles + (isOverloaded ? 18.5 : 0);
+        const beforeCost = route.cost + (isOverloaded ? 115 : 0);
+        
+        beforeStats.push({
+          id: route.id, color: route.color,
+          miles: beforeMiles, cost: beforeCost,
+          status: isOverloaded ? 'Infeasible' : 'Feasible', isRed: isOverloaded
+        });
+        totalsBefore.miles += beforeMiles; totalsBefore.cost += beforeCost;
+
+        const afterMiles = route.defaultMiles + (movedIn.length * 1.5);
+        const afterCost = route.cost + (movedIn.length * 8);
+        afterStats.push({
+          id: route.id, color: route.color,
+          miles: afterMiles, cost: afterCost, status: 'Feasible'
+        });
+        totalsAfter.miles += afterMiles; totalsAfter.cost += afterCost;
+      });
+
+      vars.push({
+        mapRoutes, suggestions, beforeStats, afterStats,
+        totalsBefore, totalsAfter: {
+          ...totalsAfter,
+          milesDiff: (totalsAfter.miles - totalsBefore.miles).toFixed(1),
+          costDiff: `-$${Math.abs(totalsAfter.cost - totalsBefore.cost).toLocaleString()}`
+        },
+        routesBefore, routesAfter
+      });
     }
-  ];
+    return vars;
+  }, [kickoffs]);
 
   const kickoffIndex = kickoffs.findIndex(k => k.id === activeKickoffId);
-  const currentVar = variations[kickoffIndex !== -1 ? kickoffIndex % 3 : 0];
+  const currentVar = variations[kickoffIndex !== -1 ? kickoffIndex : 0];
 
   const basePlanRoutes = [
     { id: '06A', name: '06A', defaultFeasibility: 'Feasible', stops: 124, packages: 156, hours: 8.5, defaultMiles: 91.5 },
@@ -181,7 +299,7 @@ const App = () => {
 
   useEffect(() => {
     setSelectedRouteIds(currentVar.mapRoutes);
-  }, [activeKickoffId]);
+  }, [activeKickoffId, currentVar.mapRoutes]);
 
   const toggleRouteSelection = (id) => {
     setSelectedRouteIds(prev => prev.includes(id) ? prev.filter(r => r !== id) : [...prev, id]);
@@ -232,6 +350,7 @@ const App = () => {
               activeStatus={activeStatus} 
               activeKickoffId={activeKickoffId} 
               mapRoutes={currentVar.mapRoutes} 
+              suggestionsData={currentVar.suggestions}
             />
           </div>
         </div>
@@ -322,7 +441,7 @@ const App = () => {
                         <td className="px-3 py-2 text-right">{r.stops}</td>
                         <td className="px-3 py-2 text-right">{r.packages}</td>
                         <td className="px-3 py-2 text-right">{r.hours}</td>
-                        <td className="px-3 py-2 text-right">{r.miles}</td>
+                        <td className="px-3 py-2 text-right">{r.miles.toFixed(1)}</td>
                         <td className="w-full"></td>
                       </tr>
                     ))}
@@ -371,10 +490,10 @@ const App = () => {
                     {currentVar.beforeStats.map(stat => (
                       <tr key={stat.id}>
                         <td className="px-3 py-2 flex items-center gap-2">
-                          <div className={`w-2 h-2 rounded-full ${stat.bgClass}`}></div> {stat.id}
+                          <div className={`w-2 h-2 rounded-full`} style={{ backgroundColor: stat.color }}></div> {stat.id}
                         </td>
                         <td className="px-2 py-2 text-right">{stat.miles.toFixed(1)}</td>
-                        <td className="px-2 py-2 text-right">${stat.cost}</td>
+                        <td className="px-2 py-2 text-right">${stat.cost.toLocaleString()}</td>
                         <td className={`px-3 py-2 text-center ${stat.isRed ? 'text-red-600 font-bold bg-red-50' : 'text-green-600'}`}>{stat.status}</td>
                       </tr>
                     ))}
@@ -410,10 +529,10 @@ const App = () => {
                     {currentVar.afterStats.map(stat => (
                       <tr key={stat.id}>
                         <td className="px-3 py-2 flex items-center gap-2">
-                          <div className={`w-2 h-2 rounded-full ${stat.bgClass}`}></div> {stat.id}
+                          <div className={`w-2 h-2 rounded-full`} style={{ backgroundColor: stat.color }}></div> {stat.id}
                         </td>
                         <td className="px-2 py-2 text-right">{stat.miles.toFixed(1)}</td>
-                        <td className="px-2 py-2 text-right">${stat.cost}</td>
+                        <td className="px-2 py-2 text-right">${stat.cost.toLocaleString()}</td>
                         <td className={`px-3 py-2 text-center ${stat.isRed ? 'text-red-600 font-bold bg-red-50' : 'text-green-700'}`}>{stat.status}</td>
                       </tr>
                     ))}
