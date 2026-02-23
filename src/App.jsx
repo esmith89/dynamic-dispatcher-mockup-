@@ -8,7 +8,8 @@ import {
   ChevronDown,
   ChevronUp,
   Clock,
-  Filter
+  Filter,
+  Bell
 } from 'lucide-react';
 import SuggestionTable from './SuggestionTable';
 import RouteMap from './RouteMap';
@@ -63,38 +64,45 @@ const baseRoutesInfo = [
 
 const App = () => {
   const [kickoffs] = useState([
-    { id: 'DD_10_02182026_0900_4780', displayTime: '09:00 AM', status: 'Planning',  date: 'Feb 18' },
+    { id: 'DD_10_02182026_0900_4780', displayTime: '09:00 AM', status: 'Planning',  date: 'Feb 18', needsAttention: true },
     { id: 'DD_09_02182026_0842_4780', displayTime: '08:42 AM', status: 'Expired',   date: 'Feb 18' },
     { id: 'DD_08_02182026_0815_4780', displayTime: '08:15 AM', status: 'Completed', date: 'Feb 18' },
-    { id: 'DD_07_02182026_0748_4780', displayTime: '07:48 AM', status: 'Completed', date: 'Feb 18' },
+    { id: 'DD_07_02182026_0748_4780', displayTime: '07:48 AM', status: 'Expired',   date: 'Feb 18' },
     { id: 'DD_06_02182026_0720_4780', displayTime: '07:20 AM', status: 'Completed', date: 'Feb 18' },
     { id: 'DD_05_02182026_0655_4780', displayTime: '06:55 AM', status: 'Completed', date: 'Feb 18' },
     { id: 'DD_04_02182026_0610_4780', displayTime: '06:10 AM', status: 'Expired',   date: 'Feb 18' },
     { id: 'DD_03_02182026_0535_4780', displayTime: '05:35 AM', status: 'Completed', date: 'Feb 18' },
-    { id: 'DD_02_02182026_0450_4780', displayTime: '04:50 AM', status: 'Completed', date: 'Feb 18' },
+    { id: 'DD_02_02182026_0450_4780', displayTime: '04:50 AM', status: 'Expired',   date: 'Feb 18' },
     { id: 'DD_01_02182026_0330_4780', displayTime: '03:30 AM', status: 'Completed', date: 'Feb 18' },
   ]);
 
   const [activeKickoffId, setActiveKickoffId] = useState(kickoffs[0].id);
   const [selectedRouteIds, setSelectedRouteIds] = useState([]);
   const [isTableExpanded, setIsTableExpanded] = useState(false);
-  const [hiddenMapRoutes, setHiddenMapRoutes] = useState([]);
+  
+  // Modal State
+  const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
 
   // Location Dropdown State
   const [isCenterDropdownOpen, setIsCenterDropdownOpen] = useState(false);
   const centerOptions = [
-    'INTER - 4780 (Terre Haute)',
-    'Building - SLIC (Center)',
-    'Building - SLIC (Center)',
-    'Building - SLIC (Center)',
-    'Building - SLIC (Center)'
+    { label: 'INTER - 4780 (Terre Haute)', hasBell: true },
+    { label: 'MDHUN - 2110 (Owings Mills)', hasBell: true },
+    { label: 'MDHUN - 2124 (Towson)', hasBell: false },
+    { label: 'SCCOL - 2912 (Columbia - West)', hasBell: true },
+    { label: 'GASTA - 3045 (Statesboro)', hasBell: false }
   ];
 
   // Column Visibility State for Route Overview
   const [isColFilterOpen, setIsColFilterOpen] = useState(false);
   const [visibleCols, setVisibleCols] = useState([
-    'feasibility', 'viewOnMap', 'loadOrion', 'leaveBuildingTime', 'stops', 'packages', 'hours', 'miles'
+    'feasibility', 'loadOrion', 'leaveBuildingTime', 'stops', 'packages', 'hours', 'miles'
   ]);
+
+  // Map Filter State
+  const [visibleMapRoutes, setVisibleMapRoutes] = useState([]);
+  const [isMapFilterOpenBefore, setIsMapFilterOpenBefore] = useState(false);
+  const [isMapFilterOpenAfter, setIsMapFilterOpenAfter] = useState(false);
 
   const toggleCol = (colId) => {
     setVisibleCols(prev => prev.includes(colId) ? prev.filter(id => id !== colId) : [...prev, colId]);
@@ -108,6 +116,36 @@ const App = () => {
     const vars = [];
     const rnd = seededRandom(42); 
 
+    // GENERATE A GLOBAL CENTRAL PLAN (Ensures map points are identical for all routes across iterations)
+    const globalActiveBGStops = {};
+    baseRoutesInfo.forEach(r => globalActiveBGStops[r.id] = []);
+    
+    for (const route of baseRoutesInfo) {
+      const genCenter = ROUTE_CENTERS[route.id];
+      const routeRadius = 0.035 + rnd() * 0.025;
+      const numPoints = 250 + Math.floor(rnd() * 100);
+
+      for (let i = 0; i < numPoints; i++) {
+        const r = Math.sqrt(rnd()) * routeRadius;
+        const theta = rnd() * 2 * Math.PI;
+        const lat = genCenter[0] + r * Math.cos(theta);
+        const lng = genCenter[1] + r * Math.sin(theta) * 1.3;
+
+        let closestId = baseRoutesInfo[0].id;
+        let minDist = Infinity;
+        for (const cand of baseRoutesInfo) {
+          const center = ROUTE_CENTERS[cand.id];
+          const dist = Math.pow(lat - center[0], 2) + Math.pow((lng - center[1])/1.3, 2);
+          if (dist < minDist) {
+            minDist = dist;
+            closestId = cand.id;
+          }
+        }
+        globalActiveBGStops[closestId].push([lat, lng]);
+      }
+    }
+
+    // GENERATE VARIATIONS
     for (let k = 0; k < 10; k++) {
       const numRoutes = Math.floor(rnd() * 7) + 2; 
       const shuffledBase = [...baseRoutesInfo].sort(() => rnd() - 0.5);
@@ -123,33 +161,9 @@ const App = () => {
       
       const mapRoutes = subset.map(r => r.id);
       
+      // Clone the global plan so transfers can mutate local copies safely
       const activeBGStops = {};
-      subset.forEach(r => activeBGStops[r.id] = []);
-      
-      for (const genRoute of subset) {
-          const genCenter = ROUTE_CENTERS[genRoute.id];
-          const routeRadius = 0.035 + rnd() * 0.025;
-          const numPoints = 250 + Math.floor(rnd() * 100);
-
-          for (let i = 0; i < numPoints; i++) {
-              const r = Math.sqrt(rnd()) * routeRadius;
-              const theta = rnd() * 2 * Math.PI;
-              const lat = genCenter[0] + r * Math.cos(theta);
-              const lng = genCenter[1] + r * Math.sin(theta) * 1.3;
-
-              let closestId = subset[0].id;
-              let minDist = Infinity;
-              for (const route of subset) {
-                  const center = ROUTE_CENTERS[route.id];
-                  const dist = Math.pow(lat - center[0], 2) + Math.pow((lng - center[1])/1.3, 2);
-                  if (dist < minDist) {
-                      minDist = dist;
-                      closestId = route.id;
-                  }
-              }
-              activeBGStops[closestId].push([lat, lng]);
-          }
-      }
+      baseRoutesInfo.forEach(r => activeBGStops[r.id] = [...globalActiveBGStops[r.id]]);
 
       const suggestions = [];
       const transferMap = {};
@@ -222,14 +236,17 @@ const App = () => {
         });
       });
 
-      const routesBefore = [];
-      const routesAfter = [];
+      const allRoutesBefore = [];
+      const allRoutesAfter = [];
       let totalsBefore = { miles: 0, cost: 0 };
       let totalsAfter = { miles: 0, cost: 0 };
       const beforeStats = [];
       const afterStats = [];
 
-      subset.forEach(route => {
+      // Iterate through ALL routes to build map plan arrays, but only gather stats for involved subset
+      baseRoutesInfo.forEach(route => {
+        const isSubset = mapRoutes.includes(route.id);
+        
         const movedOut = transfers.filter(t => t.fromId === route.id).flatMap(t => t.stops.map(coord => ({
           coord
         })));
@@ -240,35 +257,37 @@ const App = () => {
 
         const baseBgStops = activeBGStops[route.id].filter(c => !allMovedCoords.includes(c));
 
-        routesBefore.push({
+        allRoutesBefore.push({
           id: route.id, color: route.color,
           backgroundStops: baseBgStops, movedStops: movedOut
         });
 
-        routesAfter.push({
+        allRoutesAfter.push({
           id: route.id, color: route.color,
           backgroundStops: baseBgStops, movedStops: movedIn
         });
 
-        const isOverloaded = movedOut.length > 0; 
-        const beforeMiles = route.defaultMiles + (isOverloaded ? 18.5 : 0);
-        const beforeCost = route.cost + (isOverloaded ? 115 : 0);
-        const beforeStatus = isOverloaded ? 'Infeasible' : (route.defaultFeasibility || 'Feasible');
-        
-        beforeStats.push({
-          id: route.id, color: route.color, driver: route.driver,
-          miles: beforeMiles, cost: beforeCost,
-          status: beforeStatus
-        });
-        totalsBefore.miles += beforeMiles; totalsBefore.cost += beforeCost;
+        if (isSubset) {
+          const isOverloaded = movedOut.length > 0; 
+          const beforeMiles = route.defaultMiles + (isOverloaded ? 18.5 : 0);
+          const beforeCost = route.cost + (isOverloaded ? 115 : 0);
+          const beforeStatus = isOverloaded ? 'Infeasible' : (route.defaultFeasibility || 'Feasible');
+          
+          beforeStats.push({
+            id: route.id, color: route.color, driver: route.driver,
+            miles: beforeMiles, cost: beforeCost,
+            status: beforeStatus
+          });
+          totalsBefore.miles += beforeMiles; totalsBefore.cost += beforeCost;
 
-        const afterMiles = route.defaultMiles + (movedIn.length * 1.5);
-        const afterCost = route.cost + (movedIn.length * 8);
-        afterStats.push({
-          id: route.id, color: route.color, driver: route.driver,
-          miles: afterMiles, cost: afterCost, status: route.defaultFeasibility || 'Feasible'
-        });
-        totalsAfter.miles += afterMiles; totalsAfter.cost += afterCost;
+          const afterMiles = route.defaultMiles + (movedIn.length * 1.5);
+          const afterCost = route.cost + (movedIn.length * 8);
+          afterStats.push({
+            id: route.id, color: route.color, driver: route.driver,
+            miles: afterMiles, cost: afterCost, status: route.defaultFeasibility || 'Feasible'
+          });
+          totalsAfter.miles += afterMiles; totalsAfter.cost += afterCost;
+        }
       });
 
       vars.push({
@@ -278,7 +297,8 @@ const App = () => {
           milesDiff: (totalsAfter.miles - totalsBefore.miles).toFixed(1),
           costDiff: `-$${Math.abs(totalsAfter.cost - totalsBefore.cost).toLocaleString()}`
         },
-        routesBefore, routesAfter
+        routesBefore: allRoutesBefore, 
+        routesAfter: allRoutesAfter
       });
     }
     return vars;
@@ -307,36 +327,36 @@ const App = () => {
       feasibility: isFocused ? afterStat.status : r.defaultFeasibility,
       miles: isFocused ? afterStat.miles : r.defaultMiles
     };
-  });
-
-  const displayedRoutes = planRoutes;
+  }).filter(r => currentVar.mapRoutes.includes(r.id)); // Only display routes involved in DD in Overview table
 
   useEffect(() => {
-    setSelectedRouteIds(currentVar.mapRoutes);
-    setHiddenMapRoutes([]); // Reset map filters on kickoff change
+    // Reset map filters on kickoff change to only show routes involved in the active DD
+    setVisibleMapRoutes(currentVar.mapRoutes);
   }, [activeKickoffId, currentVar.mapRoutes]);
 
-  const toggleRouteSelection = (id) => {
-    setSelectedRouteIds(prev => prev.includes(id) ? prev.filter(r => r !== id) : [...prev, id]);
+  const toggleMapRouteVisibility = (id) => {
+    setVisibleMapRoutes(prev => prev.includes(id) ? prev.filter(r => r !== id) : [...prev, id]);
   };
 
-  const toggleMapRouteVisibility = (id) => {
-    setHiddenMapRoutes(prev => prev.includes(id) ? prev.filter(r => r !== id) : [...prev, id]);
+  const handleSelectAllMapRoutes = () => {
+    if (visibleMapRoutes.length === baseRoutesInfo.length) {
+      setVisibleMapRoutes([]); // deselect all
+    } else {
+      setVisibleMapRoutes(baseRoutesInfo.map(r => r.id)); // select all
+    }
   };
 
   // Filter routes passed to RouteMap based on the toggled checkboxes
-  const filteredRoutesBefore = currentVar.routesBefore.filter(r => !hiddenMapRoutes.includes(r.id));
-  const filteredRoutesAfter = currentVar.routesAfter.filter(r => !hiddenMapRoutes.includes(r.id));
+  const filteredRoutesBefore = currentVar.routesBefore.filter(r => visibleMapRoutes.includes(r.id));
+  const filteredRoutesAfter = currentVar.routesAfter.filter(r => visibleMapRoutes.includes(r.id));
 
   // Close dropdowns if clicked outside
   useEffect(() => {
     const handleWindowClick = (e) => {
-      if (!e.target.closest('.location-dropdown-container')) {
-        setIsCenterDropdownOpen(false);
-      }
-      if (!e.target.closest('.col-filter-container')) {
-        setIsColFilterOpen(false);
-      }
+      if (!e.target.closest('.location-dropdown-container')) setIsCenterDropdownOpen(false);
+      if (!e.target.closest('.col-filter-container')) setIsColFilterOpen(false);
+      if (!e.target.closest('.map-filter-before')) setIsMapFilterOpenBefore(false);
+      if (!e.target.closest('.map-filter-after')) setIsMapFilterOpenAfter(false);
     };
     window.addEventListener('click', handleWindowClick);
     return () => window.removeEventListener('click', handleWindowClick);
@@ -344,6 +364,34 @@ const App = () => {
 
   return (
     <div className="flex h-screen bg-gray-100 overflow-hidden font-sans text-gray-900 relative">
+      
+      {/* Confirmation Modal */}
+      {isConfirmModalOpen && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black bg-opacity-40 transition-opacity">
+          <div className="bg-white rounded-xl p-6 shadow-2xl max-w-sm w-full border border-gray-200">
+            <h3 className="text-lg font-bold text-gray-800 mb-3">Confirm Changes</h3>
+            <p className="text-sm text-gray-600 mb-6 leading-relaxed">Are you sure you want to accept these changes?</p>
+            <div className="flex justify-end gap-3">
+              <button 
+                onClick={() => setIsConfirmModalOpen(false)}
+                className="px-4 py-2 text-xs font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={() => {
+                  console.log('Changes formally accepted');
+                  setIsConfirmModalOpen(false);
+                }}
+                className="px-4 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors shadow-sm"
+              >
+                Accept
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="w-1/3 min-w-[350px] bg-white border-r border-gray-300 flex flex-col z-20 shadow-xl">
         <div className="flex flex-col h-1/2 border-b-4 border-gray-200">
           <div className="h-14 border-b border-gray-200 flex items-center px-4 font-bold text-gray-700 bg-gray-50 flex-shrink-0">
@@ -354,7 +402,15 @@ const App = () => {
               <div key={k.id} onClick={() => setActiveKickoffId(k.id)} className={`p-4 border-b cursor-pointer transition-colors ${activeKickoffId === k.id ? 'bg-blue-50 border-l-4 border-l-blue-500' : 'hover:bg-gray-50'}`}>
                 <div className="flex justify-between items-start mb-1">
                   <span className="font-bold text-[11px] truncate w-48 text-gray-800">{k.id}</span>
-                  <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase ${k.status === 'Planning' ? 'bg-blue-100 text-blue-700' : k.status === 'Completed' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{k.status}</span>
+                  <div className="flex flex-col items-end gap-1">
+                    <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase ${k.status === 'Planning' ? 'bg-blue-100 text-blue-700' : k.status === 'Completed' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{k.status}</span>
+                    {k.needsAttention && (
+                      <div className="flex items-center gap-1 text-amber-600">
+                        <Bell size={10} className="fill-amber-500" />
+                        <span className="text-[9px] font-bold">Needs Attention</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <div className="flex items-center gap-4 text-[10px] text-gray-500 font-medium">
                   <div className="flex items-center gap-1"><Calendar size={12} className="text-gray-400"/> {k.date}</div>
@@ -372,7 +428,7 @@ const App = () => {
             </div>
             <button 
               disabled={!isEditable}
-              onClick={() => console.log('Changes Accepted')}
+              onClick={() => setIsConfirmModalOpen(true)}
               className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white rounded-md shadow-sm transition-all flex-shrink-0 ${isEditable ? 'bg-blue-600 hover:bg-blue-700 active:scale-95' : 'bg-gray-400 cursor-not-allowed'}`}
             >
               <Check size={14} /> Accept Changes
@@ -394,46 +450,52 @@ const App = () => {
         {/* Top Header Bar for Global Actions - Set z-50 to overlap below content */}
         <header className="h-14 bg-white border-b border-gray-200 flex items-center justify-between px-6 shrink-0 z-50 shadow-sm relative">
           
-          {/* Location Dropdown */}
-          <div className="relative location-dropdown-container">
-            <button 
-              onClick={() => setIsCenterDropdownOpen(!isCenterDropdownOpen)}
-              className="flex items-center gap-2 font-bold text-gray-800 text-xl tracking-tight hover:text-blue-600 transition-colors outline-none"
-            >
-              INTER - 4780 (Terre Haute)
-              <ChevronDown size={20} className={`text-gray-500 transition-transform duration-200 ${isCenterDropdownOpen ? 'rotate-180' : ''}`} />
-            </button>
-            
-            {isCenterDropdownOpen && (
-              <div className="absolute top-full left-0 mt-2 w-72 bg-white border border-gray-200 shadow-xl rounded-lg py-2 z-50">
-                <div className="px-4 pb-2 mb-2 border-b border-gray-100 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
-                  Select Location
-                </div>
-                {centerOptions.map((opt, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => {
-                      setIsCenterDropdownOpen(false);
-                    }}
-                    className={`w-full text-left px-4 py-2 text-sm font-medium transition-colors ${idx === 0 ? 'bg-blue-50 text-blue-700 border-l-2 border-blue-600' : 'text-gray-700 hover:bg-gray-50 border-l-2 border-transparent'}`}
-                  >
-                    {opt}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+          <h1 className="font-bold text-gray-800 text-xl tracking-tight">Dynamic Dispatcher</h1>
 
-          <div className="flex items-center gap-3">
-            <button onClick={() => console.log('Reports Loaded')} className="flex items-center gap-1.5 px-4 py-1.5 text-xs font-bold text-white rounded-md shadow-sm transition-all active:scale-95 flex-shrink-0 bg-blue-600 hover:bg-blue-700">
-              Reports
-            </button>
-            <button onClick={() => console.log('ORSS/ADIM Loaded')} className="flex items-center gap-1.5 px-4 py-1.5 text-xs font-bold text-white rounded-md shadow-sm transition-all active:scale-95 flex-shrink-0 bg-blue-600 hover:bg-blue-700">
-              ORSS/ADIM
-            </button>
-            <button onClick={() => console.log('GTS Timecard Viewer Loaded')} className="flex items-center gap-1.5 px-4 py-1.5 text-xs font-bold text-white rounded-md shadow-sm transition-all active:scale-95 flex-shrink-0 bg-blue-600 hover:bg-blue-700">
-              GTS Timecard Viewer
-            </button>
+          <div className="flex items-center gap-4">
+            {/* Location Dropdown */}
+            <div className="relative location-dropdown-container">
+              <button 
+                onClick={() => setIsCenterDropdownOpen(!isCenterDropdownOpen)}
+                className="flex items-center gap-1.5 font-bold text-gray-800 text-sm hover:text-blue-600 transition-colors outline-none"
+              >
+                <Bell size={16} className="text-amber-500 fill-amber-500" />
+                INTER - 4780 (Terre Haute)
+                <ChevronDown size={16} className={`text-gray-500 transition-transform duration-200 ${isCenterDropdownOpen ? 'rotate-180' : ''}`} />
+              </button>
+              
+              {isCenterDropdownOpen && (
+                <div className="absolute top-full right-0 mt-2 w-72 bg-white border border-gray-200 shadow-xl rounded-lg py-2 z-50">
+                  <div className="px-4 pb-2 mb-2 border-b border-gray-100 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                    Select Location
+                  </div>
+                  {centerOptions.map((opt, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => {
+                        setIsCenterDropdownOpen(false);
+                      }}
+                      className={`w-full flex items-center gap-2 text-left px-4 py-2 text-sm font-medium transition-colors ${idx === 0 ? 'bg-blue-50 text-blue-700 border-l-2 border-blue-600' : 'text-gray-700 hover:bg-gray-50 border-l-2 border-transparent'}`}
+                    >
+                      {opt.hasBell ? <Bell size={14} className="text-amber-500 fill-amber-500 shrink-0" /> : <div className="w-[14px] shrink-0" />}
+                      <span className="truncate">{opt.label}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button onClick={() => console.log('Reports Loaded')} className="flex items-center gap-1.5 px-4 py-1.5 text-xs font-bold text-white rounded-md shadow-sm transition-all active:scale-95 flex-shrink-0 bg-blue-600 hover:bg-blue-700">
+                Reports
+              </button>
+              <button onClick={() => console.log('ORSS/ADIM Loaded')} className="flex items-center gap-1.5 px-4 py-1.5 text-xs font-bold text-white rounded-md shadow-sm transition-all active:scale-95 flex-shrink-0 bg-blue-600 hover:bg-blue-700">
+                ORSS/ADIM
+              </button>
+              <button onClick={() => console.log('GTS Timecard Viewer Loaded')} className="flex items-center gap-1.5 px-4 py-1.5 text-xs font-bold text-white rounded-md shadow-sm transition-all active:scale-95 flex-shrink-0 bg-blue-600 hover:bg-blue-700">
+                GTS Timecard Viewer
+              </button>
+            </div>
           </div>
         </header>
 
@@ -450,18 +512,17 @@ const App = () => {
                 <table className="w-full text-left text-sm relative">
                   <thead className="bg-white z-10 border-b shadow-sm relative">
                     <tr className="text-gray-500 uppercase text-xs">
-                      <th className="px-3 py-2 font-bold whitespace-nowrap">Route</th>
-                      <th className="px-3 py-2 font-bold whitespace-nowrap">Driver</th>
-                      {visibleCols.includes('feasibility') && <th className="px-3 py-2 font-bold text-center whitespace-nowrap">Feasibility</th>}
-                      {visibleCols.includes('viewOnMap') && <th className="px-3 py-2 font-bold text-center whitespace-nowrap">View on Map</th>}
+                      <th className="px-3 py-2 font-bold text-center whitespace-nowrap">Route</th>
+                      <th className="px-3 py-2 font-bold whitespace-nowrap text-left">Driver</th>
+                      {visibleCols.includes('feasibility') && <th className="px-3 py-2 font-bold text-left whitespace-nowrap">Feasibility</th>}
                       {visibleCols.includes('loadOrion') && <th className="px-3 py-2 font-bold text-center whitespace-nowrap">Load ORION</th>}
                       {visibleCols.includes('leaveBuildingTime') && <th className="px-3 py-2 font-bold text-center whitespace-nowrap">Leave Building Time</th>}
-                      {visibleCols.includes('stops') && <th className="px-3 py-2 font-bold text-right whitespace-nowrap">Stops</th>}
-                      {visibleCols.includes('packages') && <th className="px-3 py-2 font-bold text-right whitespace-nowrap">Packages</th>}
-                      {visibleCols.includes('hours') && <th className="px-3 py-2 font-bold text-right whitespace-nowrap">Hours</th>}
-                      {visibleCols.includes('miles') && <th className="px-3 py-2 font-bold text-right whitespace-nowrap">Miles</th>}
-                      {visibleCols.includes('eows') && <th className="px-3 py-2 font-bold text-right whitespace-nowrap">EOW's</th>}
-                      {visibleCols.includes('helperHours') && <th className="px-3 py-2 font-bold text-right whitespace-nowrap">Helper Hours</th>}
+                      {visibleCols.includes('stops') && <th className="px-3 py-2 font-bold text-center whitespace-nowrap">Stops</th>}
+                      {visibleCols.includes('packages') && <th className="px-3 py-2 font-bold text-center whitespace-nowrap">Packages</th>}
+                      {visibleCols.includes('hours') && <th className="px-3 py-2 font-bold text-center whitespace-nowrap">Hours</th>}
+                      {visibleCols.includes('miles') && <th className="px-3 py-2 font-bold text-center whitespace-nowrap">Miles</th>}
+                      {visibleCols.includes('eows') && <th className="px-3 py-2 font-bold text-center whitespace-nowrap">EOW's</th>}
+                      {visibleCols.includes('helperHours') && <th className="px-3 py-2 font-bold text-center whitespace-nowrap">Helper Hours</th>}
                       <th className="w-full px-3 py-1 text-right relative col-filter-container z-50">
                         <button 
                           onClick={() => setIsColFilterOpen(!isColFilterOpen)}
@@ -476,7 +537,6 @@ const App = () => {
                             </div>
                             {[
                               { id: 'feasibility', label: 'Feasibility' },
-                              { id: 'viewOnMap', label: 'View on Map' },
                               { id: 'loadOrion', label: 'Load ORION' },
                               { id: 'leaveBuildingTime', label: 'Leave Building Time' },
                               { id: 'stops', label: 'Stops' },
@@ -502,12 +562,12 @@ const App = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 text-gray-700">
-                    {displayedRoutes.map((r) => (
+                    {planRoutes.map((r) => (
                       <tr key={r.id} className="hover:bg-gray-50">
-                        <td className="px-3 py-2 font-bold">{r.name}</td>
-                        <td className="px-3 py-2 text-gray-600 font-medium whitespace-nowrap">{r.driver}</td>
+                        <td className="px-3 py-2 font-bold text-center">{r.name}</td>
+                        <td className="px-3 py-2 text-gray-600 font-medium whitespace-nowrap text-left">{r.driver}</td>
                         {visibleCols.includes('feasibility') && (
-                          <td className="px-3 py-2 text-center">
+                          <td className="px-3 py-2 text-left">
                             <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase whitespace-nowrap ${
                               r.feasibility === 'Feasible' ? 'bg-green-100 text-green-700' : 
                               r.feasibility === 'Risk Feasible' ? 'bg-amber-100 text-amber-700' : 
@@ -515,11 +575,6 @@ const App = () => {
                             }`}>
                               {r.feasibility}
                             </span>
-                          </td>
-                        )}
-                        {visibleCols.includes('viewOnMap') && (
-                          <td className="px-3 py-2 text-center">
-                            <input type="checkbox" className="w-4 h-4 cursor-pointer text-blue-600 rounded focus:ring-blue-500" checked={selectedRouteIds.includes(r.id)} onChange={() => toggleRouteSelection(r.id)} />
                           </td>
                         )}
                         {visibleCols.includes('loadOrion') && (
@@ -536,30 +591,30 @@ const App = () => {
                           <td className="px-3 py-2 text-center font-medium whitespace-nowrap">{r.leaveBuildingTime}</td>
                         )}
                         {visibleCols.includes('stops') && (
-                          <td className="px-3 py-2 text-right">{r.stops}</td>
+                          <td className="px-3 py-2 text-center">{r.stops}</td>
                         )}
                         {visibleCols.includes('packages') && (
-                          <td className="px-3 py-2 text-right">{r.packages}</td>
+                          <td className="px-3 py-2 text-center">{r.packages}</td>
                         )}
                         {visibleCols.includes('hours') && (
-                          <td className="px-3 py-2 text-right">{r.hours}</td>
+                          <td className="px-3 py-2 text-center">{r.hours}</td>
                         )}
                         {visibleCols.includes('miles') && (
-                          <td className="px-3 py-2 text-right">{r.miles.toFixed(1)}</td>
+                          <td className="px-3 py-2 text-center">{r.miles.toFixed(1)}</td>
                         )}
                         {visibleCols.includes('eows') && (
-                          <td className="px-3 py-2 text-right">{r.eows}</td>
+                          <td className="px-3 py-2 text-center">{r.eows}</td>
                         )}
                         {visibleCols.includes('helperHours') && (
-                          <td className="px-3 py-2 text-right">{r.helperHours}</td>
+                          <td className="px-3 py-2 text-center">{r.helperHours}</td>
                         )}
                         <td className="w-full"></td>
                       </tr>
                     ))}
-                    {displayedRoutes.length === 0 && (
+                    {planRoutes.length === 0 && (
                       <tr>
                         <td colSpan="13" className="px-4 py-8 text-center text-gray-400 font-medium text-sm">
-                          No routes match the selected filter.
+                          No routes matched.
                         </td>
                       </tr>
                     )}
@@ -580,27 +635,46 @@ const App = () => {
           </div>
 
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 pb-20">
-            <section className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col">
-              <div className="px-4 py-3 border-b bg-gray-50 text-xs font-bold text-gray-500 uppercase flex justify-between tracking-widest"><span>Before</span></div>
-              <div className="h-[350px] relative">
+            <section className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-visible flex flex-col">
+              <div className="px-4 py-2 border-b bg-gray-50 flex justify-between items-center relative map-filter-before">
+                <span className="text-xs font-bold text-gray-500 uppercase tracking-widest">Before</span>
+                <button 
+                  onClick={() => setIsMapFilterOpenBefore(!isMapFilterOpenBefore)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1 bg-white border border-gray-200 rounded text-[10px] font-bold text-gray-600 shadow-sm hover:bg-gray-100 transition-colors normal-case"
+                >
+                  <Filter size={12} /> Route Filter
+                </button>
+                {isMapFilterOpenBefore && (
+                  <div className="absolute top-full right-0 mt-1 w-80 bg-white border border-gray-200 shadow-xl rounded-lg p-3 z-[9999] text-left">
+                    <div className="flex justify-between items-center pb-2 mb-2 border-b border-gray-100">
+                      <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                        Show Routes on Map
+                      </span>
+                      <button 
+                        onClick={handleSelectAllMapRoutes}
+                        className="text-[10px] text-blue-600 font-bold hover:underline normal-case"
+                      >
+                        {visibleMapRoutes.length === baseRoutesInfo.length ? 'Deselect All' : 'Select All'}
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      {baseRoutesInfo.map(r => (
+                        <label key={r.id} className="flex items-center gap-1.5 text-xs font-medium hover:bg-gray-50 cursor-pointer p-1 rounded">
+                          <input 
+                            type="checkbox" 
+                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            checked={visibleMapRoutes.includes(r.id)}
+                            onChange={() => toggleMapRouteVisibility(r.id)}
+                          />
+                          <span className="text-gray-700">{r.id}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div className="h-[350px] relative z-0">
                 <RouteMap routes={filteredRoutesBefore} />
-                <div className="absolute top-2 right-2 flex flex-col gap-1 z-[400]">
-                  {currentVar.beforeStats.map(stat => (
-                    <label 
-                      key={stat.id} 
-                      style={{ color: stat.color, borderColor: stat.color + '40' }} 
-                      className="bg-white/90 px-2 py-1 text-[10px] font-bold rounded shadow border flex items-center gap-1.5 cursor-pointer hover:bg-white transition-colors"
-                    >
-                      <input 
-                        type="checkbox" 
-                        className="w-2.5 h-2.5 cursor-pointer rounded-sm"
-                        checked={!hiddenMapRoutes.includes(stat.id)}
-                        onChange={() => toggleMapRouteVisibility(stat.id)}
-                      />
-                      <span>{stat.id}</span>
-                    </label>
-                  ))}
-                </div>
               </div>
               <div className="border-t">
                 <table className="w-full text-left text-xs table-fixed">
@@ -645,27 +719,46 @@ const App = () => {
               </div>
             </section>
 
-            <section className="bg-white rounded-xl border border-gray-200 shadow-md overflow-hidden flex flex-col">
-              <div className="px-4 py-3 border-b bg-gray-50 text-xs font-bold text-gray-500 uppercase flex justify-between tracking-widest"><span>After</span></div>
-              <div className="h-[350px] relative">
+            <section className="bg-white rounded-xl border border-gray-200 shadow-md overflow-visible flex flex-col">
+              <div className="px-4 py-2 border-b bg-gray-50 flex justify-between items-center relative map-filter-after">
+                <span className="text-xs font-bold text-gray-500 uppercase tracking-widest">After</span>
+                <button 
+                  onClick={() => setIsMapFilterOpenAfter(!isMapFilterOpenAfter)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1 bg-white border border-gray-200 rounded text-[10px] font-bold text-gray-600 shadow-sm hover:bg-gray-100 transition-colors normal-case"
+                >
+                  <Filter size={12} /> Route Filter
+                </button>
+                {isMapFilterOpenAfter && (
+                  <div className="absolute top-full right-0 mt-1 w-80 bg-white border border-gray-200 shadow-xl rounded-lg p-3 z-[9999] text-left">
+                    <div className="flex justify-between items-center pb-2 mb-2 border-b border-gray-100">
+                      <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                        Show Routes on Map
+                      </span>
+                      <button 
+                        onClick={handleSelectAllMapRoutes}
+                        className="text-[10px] text-blue-600 font-bold hover:underline normal-case"
+                      >
+                        {visibleMapRoutes.length === baseRoutesInfo.length ? 'Deselect All' : 'Select All'}
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      {baseRoutesInfo.map(r => (
+                        <label key={r.id} className="flex items-center gap-1.5 text-xs font-medium hover:bg-gray-50 cursor-pointer p-1 rounded">
+                          <input 
+                            type="checkbox" 
+                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            checked={visibleMapRoutes.includes(r.id)}
+                            onChange={() => toggleMapRouteVisibility(r.id)}
+                          />
+                          <span className="text-gray-700">{r.id}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div className="h-[350px] relative z-0">
                 <RouteMap routes={filteredRoutesAfter} />
-                <div className="absolute top-2 right-2 flex flex-col gap-1 z-[400]">
-                  {currentVar.afterStats.map(stat => (
-                    <label 
-                      key={stat.id} 
-                      style={{ color: stat.color, borderColor: stat.color + '40' }} 
-                      className="bg-white/90 px-2 py-1 text-[10px] font-bold rounded shadow border flex items-center gap-1.5 cursor-pointer hover:bg-white transition-colors"
-                    >
-                      <input 
-                        type="checkbox" 
-                        className="w-2.5 h-2.5 cursor-pointer rounded-sm"
-                        checked={!hiddenMapRoutes.includes(stat.id)}
-                        onChange={() => toggleMapRouteVisibility(stat.id)}
-                      />
-                      <span>{stat.id}</span>
-                    </label>
-                  ))}
-                </div>
               </div>
               <div className="border-t">
                 <table className="w-full text-left text-xs table-fixed">

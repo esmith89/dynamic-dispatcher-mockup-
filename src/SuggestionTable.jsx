@@ -127,7 +127,7 @@ const SuggestionTable = ({ isEditable, activeStatus, activeKickoffId, mapRoutes,
               </th>
 
               <th className="px-3 py-2 text-left">Address Range</th>
-              <th className="px-3 py-2 text-center">ACTION</th>
+              <th className="px-3 py-2 text-left w-20">ACTION</th>
               <th className="px-3 py-2 text-left">Move To</th>
             </tr>
           </thead>
@@ -153,8 +153,8 @@ const SuggestionTable = ({ isEditable, activeStatus, activeKickoffId, mapRoutes,
                       <div className="text-[10px] font-bold text-indigo-500">UOW: {item.uow}</div>
                     </div>
                   </td>
-                  <td className="px-3 py-3 text-center">
-                    <div className="flex justify-center gap-2">
+                  <td className="px-3 py-3 text-left">
+                    <div className="flex justify-start gap-2">
                       {activeStatus !== 'Expired' ? (
                         <>
                           <button 
@@ -183,14 +183,20 @@ const SuggestionTable = ({ isEditable, activeStatus, activeKickoffId, mapRoutes,
                   </td>
                   <td className="px-3 py-3">
                     {activeStatus === 'Planning' ? (
-                      <select 
-                        value={item.manualTo}
-                        onChange={(e) => handleRouteChange(item.id, e.target.value)}
-                        className="text-[10px] border rounded p-1 w-20 bg-gray-50 font-bold outline-none focus:border-blue-500"
-                      >
-                        <option value="">Select...</option>
-                        {routeOptions.map(r => <option key={r} value={r}>{r}</option>)}
-                      </select>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-gray-400 italic whitespace-nowrap">or move to</span>
+                        <select 
+                          value={item.manualTo}
+                          onChange={(e) => handleRouteChange(item.id, e.target.value)}
+                          className="text-[10px] border rounded p-1 w-20 bg-gray-50 font-bold outline-none focus:border-blue-500"
+                        >
+                          <option value="">Select...</option>
+                          {/* Filter out both the specific 'to' route and 'from' route for this row */}
+                          {routeOptions.filter(r => r !== item.to && r !== item.from).map(r => (
+                            <option key={r} value={r}>{r}</option>
+                          ))}
+                        </select>
+                      </div>
                     ) : <span className="text-gray-300">-</span>}
                   </td>
                 </tr>
