@@ -50,15 +50,15 @@ const ADJACENCY = {
 };
 
 const baseRoutesInfo = [
-  { id: '06A', color: '#f97316', defaultMiles: 91.5, cost: 365 },
-  { id: '06B', color: '#8b5cf6', defaultMiles: 95.0, cost: 385 },
-  { id: '06C', color: '#db2777', defaultMiles: 78.2, cost: 310 },
-  { id: '07A', color: '#16a34a', defaultMiles: 110.5, cost: 450 },
-  { id: '07B', color: '#ca8a04', defaultMiles: 65.0, cost: 260 },
-  { id: '07C', color: '#2563eb', defaultMiles: 105.0, cost: 450 },
-  { id: '08A', color: '#dc2626', defaultMiles: 82.4, cost: 330 },
-  { id: '08B', color: '#0d9488', defaultMiles: 88.9, cost: 350 },
-  { id: '08C', color: '#4f46e5', defaultMiles: 75.3, cost: 310 },
+  { id: '06A', driver: 'A. Kaminski', color: '#f97316', defaultMiles: 91.5, cost: 365, defaultFeasibility: 'Feasible' },
+  { id: '06B', driver: 'E. Smith', color: '#8b5cf6', defaultMiles: 95.0, cost: 385, defaultFeasibility: 'Risk Feasible' },
+  { id: '06C', driver: 'B. Conard', color: '#db2777', defaultMiles: 78.2, cost: 310, defaultFeasibility: 'Feasible' },
+  { id: '07A', driver: 'M. Spence', color: '#16a34a', defaultMiles: 110.5, cost: 450, defaultFeasibility: 'Risk Feasible' },
+  { id: '07B', driver: 'L. Phillips', color: '#ca8a04', defaultMiles: 65.0, cost: 260, defaultFeasibility: 'Feasible' },
+  { id: '07C', driver: 'J. Tippins', color: '#2563eb', defaultMiles: 105.0, cost: 450, defaultFeasibility: 'Risk Feasible' },
+  { id: '08A', driver: 'C. Cummings', color: '#dc2626', defaultMiles: 82.4, cost: 330, defaultFeasibility: 'Feasible' },
+  { id: '08B', driver: 'A. Squitieri', color: '#0d9488', defaultMiles: 88.9, cost: 350, defaultFeasibility: 'Feasible' },
+  { id: '08C', driver: 'K. Snyder', color: '#4f46e5', defaultMiles: 75.3, cost: 310, defaultFeasibility: 'Feasible' },
 ];
 
 const App = () => {
@@ -78,8 +78,27 @@ const App = () => {
   const [activeKickoffId, setActiveKickoffId] = useState(kickoffs[0].id);
   const [selectedRouteIds, setSelectedRouteIds] = useState([]);
   const [isTableExpanded, setIsTableExpanded] = useState(false);
-  const [isRouteFilterOpen, setIsRouteFilterOpen] = useState(false);
-  const [routeFilters, setRouteFilters] = useState([]);
+  const [hiddenMapRoutes, setHiddenMapRoutes] = useState([]);
+
+  // Location Dropdown State
+  const [isCenterDropdownOpen, setIsCenterDropdownOpen] = useState(false);
+  const centerOptions = [
+    'INTER - 4780 (Terre Haute)',
+    'Building - SLIC (Center)',
+    'Building - SLIC (Center)',
+    'Building - SLIC (Center)',
+    'Building - SLIC (Center)'
+  ];
+
+  // Column Visibility State for Route Overview
+  const [isColFilterOpen, setIsColFilterOpen] = useState(false);
+  const [visibleCols, setVisibleCols] = useState([
+    'feasibility', 'viewOnMap', 'loadOrion', 'leaveBuildingTime', 'stops', 'packages', 'hours', 'miles'
+  ]);
+
+  const toggleCol = (colId) => {
+    setVisibleCols(prev => prev.includes(colId) ? prev.filter(id => id !== colId) : [...prev, colId]);
+  };
 
   const mostRecentId = kickoffs[0].id;
   const isEditable = activeKickoffId === mostRecentId;
@@ -104,15 +123,12 @@ const App = () => {
       
       const mapRoutes = subset.map(r => r.id);
       
-      // dynamically generate organic Voronoi for this specific subset
       const activeBGStops = {};
       subset.forEach(r => activeBGStops[r.id] = []);
       
-      // Generate points around each active route's center with a randomized radius.
-      // This creates an irregular, non-circular outer boundary while keeping perfect internal borders!
       for (const genRoute of subset) {
           const genCenter = ROUTE_CENTERS[genRoute.id];
-          const routeRadius = 0.035 + rnd() * 0.025; // Variable reach per route (0.035 to 0.060 degrees)
+          const routeRadius = 0.035 + rnd() * 0.025;
           const numPoints = 250 + Math.floor(rnd() * 100);
 
           for (let i = 0; i < numPoints; i++) {
@@ -135,10 +151,9 @@ const App = () => {
           }
       }
 
-      // GENERATE SUGGESTIONS DATA TIED DIRECTLY TO MAP TRANSFERS
       const suggestions = [];
-      const transferMap = {}; // Tracks exactly how many stops to move on map
-      const numSuggestions = Math.floor(rnd() * 3) + 5; // 5 to 7 suggestions
+      const transferMap = {};
+      const numSuggestions = Math.floor(rnd() * 3) + 5;
       const kickoffStatus = kickoffs[k].status;
 
       for (let i = 0; i < numSuggestions; i++) {
@@ -160,7 +175,7 @@ const App = () => {
         } else {
           const endNum = startNum + Math.floor(rnd() * 100) + 10;
           addressDisplay = `${startNum} - ${endNum} ${street}`;
-          stopsCount = Math.floor(rnd() * 4) + 2; // 2 to 5 stops
+          stopsCount = Math.floor(rnd() * 4) + 2; 
         }
 
         const transKey = `${fromRoute.id}->${toRoute.id}`;
@@ -184,7 +199,6 @@ const App = () => {
         });
       }
 
-      // Execute transfers on the map based EXACTLY on suggestion amounts
       const transfers = [];
       const allMovedCoords = [];
 
@@ -192,14 +206,13 @@ const App = () => {
         const availableStops = activeBGStops[t.from].filter(c => !allMovedCoords.includes(c));
         const toCenter = ROUTE_CENTERS[t.to];
         
-        // Find dots perfectly on the border
         availableStops.sort((a, b) => {
           const distA = Math.pow(a[0] - toCenter[0], 2) + Math.pow((a[1] - toCenter[1])/1.3, 2);
           const distB = Math.pow(b[0] - toCenter[0], 2) + Math.pow((b[1] - toCenter[1])/1.3, 2);
           return distA - distB;
         });
         
-        const movedForThisTransfer = availableStops.slice(0, t.count); // Shave exact match amount
+        const movedForThisTransfer = availableStops.slice(0, t.count);
         movedForThisTransfer.forEach(s => allMovedCoords.push(s));
 
         transfers.push({
@@ -240,19 +253,20 @@ const App = () => {
         const isOverloaded = movedOut.length > 0; 
         const beforeMiles = route.defaultMiles + (isOverloaded ? 18.5 : 0);
         const beforeCost = route.cost + (isOverloaded ? 115 : 0);
+        const beforeStatus = isOverloaded ? 'Infeasible' : (route.defaultFeasibility || 'Feasible');
         
         beforeStats.push({
-          id: route.id, color: route.color,
+          id: route.id, color: route.color, driver: route.driver,
           miles: beforeMiles, cost: beforeCost,
-          status: isOverloaded ? 'Infeasible' : 'Feasible', isRed: isOverloaded
+          status: beforeStatus
         });
         totalsBefore.miles += beforeMiles; totalsBefore.cost += beforeCost;
 
         const afterMiles = route.defaultMiles + (movedIn.length * 1.5);
         const afterCost = route.cost + (movedIn.length * 8);
         afterStats.push({
-          id: route.id, color: route.color,
-          miles: afterMiles, cost: afterCost, status: 'Feasible'
+          id: route.id, color: route.color, driver: route.driver,
+          miles: afterMiles, cost: afterCost, status: route.defaultFeasibility || 'Feasible'
         });
         totalsAfter.miles += afterMiles; totalsAfter.cost += afterCost;
       });
@@ -274,15 +288,15 @@ const App = () => {
   const currentVar = variations[kickoffIndex !== -1 ? kickoffIndex : 0];
 
   const basePlanRoutes = [
-    { id: '06A', name: '06A', defaultFeasibility: 'Feasible', stops: 124, packages: 156, hours: 8.5, defaultMiles: 91.5 },
-    { id: '06B', name: '06B', defaultFeasibility: 'Feasible', stops: 118, packages: 142, hours: 8.2, defaultMiles: 95.0 },
-    { id: '06C', name: '06C', defaultFeasibility: 'Feasible', stops: 105, packages: 120, hours: 7.5, defaultMiles: 78.2 },
-    { id: '07A', name: '07A', defaultFeasibility: 'Risk Feasible', stops: 132, packages: 170, hours: 9.1, defaultMiles: 110.5 },
-    { id: '07B', name: '07B', defaultFeasibility: 'Feasible', stops: 98, packages: 115, hours: 7.1, defaultMiles: 65.0 },
-    { id: '07C', name: '07C', defaultFeasibility: 'Feasible', stops: 145, packages: 188, hours: 9.5, defaultMiles: 105.0 },
-    { id: '08A', name: '08A', defaultFeasibility: 'Risk Feasible', stops: 112, packages: 134, hours: 8.0, defaultMiles: 82.4 },
-    { id: '08B', name: '08B', defaultFeasibility: 'Feasible', stops: 125, packages: 150, hours: 8.6, defaultMiles: 88.9 },
-    { id: '08C', name: '08C', defaultFeasibility: 'Feasible', stops: 109, packages: 128, hours: 7.8, defaultMiles: 75.3 },
+    { id: '06A', name: '06A', driver: 'A. Kaminski', defaultFeasibility: 'Feasible', leaveBuildingTime: '8:50', stops: 124, packages: 156, hours: 8.5, defaultMiles: 91.5, eows: 0, helperHours: 0 },
+    { id: '06B', name: '06B', driver: 'E. Smith', defaultFeasibility: 'Risk Feasible', leaveBuildingTime: '8:50', stops: 118, packages: 142, hours: 8.2, defaultMiles: 95.0, eows: 1, helperHours: 0 },
+    { id: '06C', name: '06C', driver: 'B. Conard', defaultFeasibility: 'Feasible', leaveBuildingTime: '8:50', stops: 105, packages: 120, hours: 7.5, defaultMiles: 78.2, eows: 0, helperHours: 0 },
+    { id: '07A', name: '07A', driver: 'M. Spence', defaultFeasibility: 'Risk Feasible', leaveBuildingTime: '8:50', stops: 132, packages: 170, hours: 9.1, defaultMiles: 110.5, eows: 1, helperHours: 0 },
+    { id: '07B', name: '07B', driver: 'L. Phillips', defaultFeasibility: 'Feasible', leaveBuildingTime: '8:50', stops: 98, packages: 115, hours: 7.1, defaultMiles: 65.0, eows: 0, helperHours: 0 },
+    { id: '07C', name: '07C', driver: 'J. Tippins', defaultFeasibility: 'Risk Feasible', leaveBuildingTime: '8:50', stops: 145, packages: 188, hours: 9.5, defaultMiles: 105.0, eows: 2, helperHours: 0 },
+    { id: '08A', name: '08A', driver: 'C. Cummings', defaultFeasibility: 'Feasible', leaveBuildingTime: '8:50', stops: 112, packages: 134, hours: 8.0, defaultMiles: 82.4, eows: 0, helperHours: 0 },
+    { id: '08B', name: '08B', driver: 'A. Squitieri', defaultFeasibility: 'Feasible', leaveBuildingTime: '8:50', stops: 125, packages: 150, hours: 8.6, defaultMiles: 88.9, eows: 0, helperHours: 0 },
+    { id: '08C', name: '08C', driver: 'K. Snyder', defaultFeasibility: 'Feasible', leaveBuildingTime: '8:50', stops: 109, packages: 128, hours: 7.8, defaultMiles: 75.3, eows: 0, helperHours: 0 },
   ];
 
   const planRoutes = basePlanRoutes.map(r => {
@@ -290,24 +304,43 @@ const App = () => {
     const afterStat = currentVar.afterStats.find(s => s.id === r.id);
     return {
       ...r,
-      feasibility: isFocused ? 'Feasible' : r.defaultFeasibility,
+      feasibility: isFocused ? afterStat.status : r.defaultFeasibility,
       miles: isFocused ? afterStat.miles : r.defaultMiles
     };
   });
 
-  const displayedRoutes = planRoutes.filter(r => routeFilters.length === 0 || routeFilters.includes(r.id));
+  const displayedRoutes = planRoutes;
 
   useEffect(() => {
     setSelectedRouteIds(currentVar.mapRoutes);
+    setHiddenMapRoutes([]); // Reset map filters on kickoff change
   }, [activeKickoffId, currentVar.mapRoutes]);
 
   const toggleRouteSelection = (id) => {
     setSelectedRouteIds(prev => prev.includes(id) ? prev.filter(r => r !== id) : [...prev, id]);
   };
 
-  const toggleRouteFilter = (id) => {
-    setRouteFilters(prev => prev.includes(id) ? prev.filter(fId => fId !== id) : [...prev, id]);
+  const toggleMapRouteVisibility = (id) => {
+    setHiddenMapRoutes(prev => prev.includes(id) ? prev.filter(r => r !== id) : [...prev, id]);
   };
+
+  // Filter routes passed to RouteMap based on the toggled checkboxes
+  const filteredRoutesBefore = currentVar.routesBefore.filter(r => !hiddenMapRoutes.includes(r.id));
+  const filteredRoutesAfter = currentVar.routesAfter.filter(r => !hiddenMapRoutes.includes(r.id));
+
+  // Close dropdowns if clicked outside
+  useEffect(() => {
+    const handleWindowClick = (e) => {
+      if (!e.target.closest('.location-dropdown-container')) {
+        setIsCenterDropdownOpen(false);
+      }
+      if (!e.target.closest('.col-filter-container')) {
+        setIsColFilterOpen(false);
+      }
+    };
+    window.addEventListener('click', handleWindowClick);
+    return () => window.removeEventListener('click', handleWindowClick);
+  }, []);
 
   return (
     <div className="flex h-screen bg-gray-100 overflow-hidden font-sans text-gray-900 relative">
@@ -339,7 +372,8 @@ const App = () => {
             </div>
             <button 
               disabled={!isEditable}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white rounded-md shadow-sm transition-colors flex-shrink-0 ${isEditable ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-400 cursor-not-allowed'}`}
+              onClick={() => console.log('Changes Accepted')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white rounded-md shadow-sm transition-all flex-shrink-0 ${isEditable ? 'bg-blue-600 hover:bg-blue-700 active:scale-95' : 'bg-gray-400 cursor-not-allowed'}`}
             >
               <Check size={14} /> Accept Changes
             </button>
@@ -357,97 +391,174 @@ const App = () => {
       </div>
 
       <div className="w-2/3 flex flex-col min-w-0 bg-gray-100 h-screen">
-        <main className="flex-1 overflow-y-auto p-6 space-y-3">
+        {/* Top Header Bar for Global Actions - Set z-50 to overlap below content */}
+        <header className="h-14 bg-white border-b border-gray-200 flex items-center justify-between px-6 shrink-0 z-50 shadow-sm relative">
+          
+          {/* Location Dropdown */}
+          <div className="relative location-dropdown-container">
+            <button 
+              onClick={() => setIsCenterDropdownOpen(!isCenterDropdownOpen)}
+              className="flex items-center gap-2 font-bold text-gray-800 text-xl tracking-tight hover:text-blue-600 transition-colors outline-none"
+            >
+              INTER - 4780 (Terre Haute)
+              <ChevronDown size={20} className={`text-gray-500 transition-transform duration-200 ${isCenterDropdownOpen ? 'rotate-180' : ''}`} />
+            </button>
+            
+            {isCenterDropdownOpen && (
+              <div className="absolute top-full left-0 mt-2 w-72 bg-white border border-gray-200 shadow-xl rounded-lg py-2 z-50">
+                <div className="px-4 pb-2 mb-2 border-b border-gray-100 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                  Select Location
+                </div>
+                {centerOptions.map((opt, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => {
+                      setIsCenterDropdownOpen(false);
+                    }}
+                    className={`w-full text-left px-4 py-2 text-sm font-medium transition-colors ${idx === 0 ? 'bg-blue-50 text-blue-700 border-l-2 border-blue-600' : 'text-gray-700 hover:bg-gray-50 border-l-2 border-transparent'}`}
+                  >
+                    {opt}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button onClick={() => console.log('Reports Loaded')} className="flex items-center gap-1.5 px-4 py-1.5 text-xs font-bold text-white rounded-md shadow-sm transition-all active:scale-95 flex-shrink-0 bg-blue-600 hover:bg-blue-700">
+              Reports
+            </button>
+            <button onClick={() => console.log('ORSS/ADIM Loaded')} className="flex items-center gap-1.5 px-4 py-1.5 text-xs font-bold text-white rounded-md shadow-sm transition-all active:scale-95 flex-shrink-0 bg-blue-600 hover:bg-blue-700">
+              ORSS/ADIM
+            </button>
+            <button onClick={() => console.log('GTS Timecard Viewer Loaded')} className="flex items-center gap-1.5 px-4 py-1.5 text-xs font-bold text-white rounded-md shadow-sm transition-all active:scale-95 flex-shrink-0 bg-blue-600 hover:bg-blue-700">
+              GTS Timecard Viewer
+            </button>
+          </div>
+        </header>
+
+        <main className="flex-1 overflow-y-auto p-6 space-y-3 relative z-0">
           
           {isTableExpanded && (
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col transition-all">
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-visible flex flex-col transition-all">
               <div className="h-14 px-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
-                <h2 className="font-bold text-gray-800 text-sm">Route Overview (If Changes are Accepted)</h2>
-                <button className="flex items-center gap-1.5 px-3 py-1 bg-white border border-gray-200 rounded text-xs font-bold text-gray-600 shadow-sm hover:bg-gray-100 transition-colors">
-                  <Filter size={12} /> Filter
-                </button>
+                <h2 className="font-bold text-gray-800 text-sm">
+                  {activeStatus === 'Planning' ? 'Route Overview (If Changes are Accepted)' : 'Route Overview'}
+                </h2>
               </div>
               <div className="overflow-x-visible">
                 <table className="w-full text-left text-sm relative">
                   <thead className="bg-white z-10 border-b shadow-sm relative">
                     <tr className="text-gray-500 uppercase text-xs">
-                      
-                      <th className="px-3 py-2 font-bold whitespace-nowrap relative">
-                        <div 
-                          className="flex items-center gap-1 cursor-pointer hover:text-blue-600 select-none"
-                          onClick={() => setIsRouteFilterOpen(!isRouteFilterOpen)}
+                      <th className="px-3 py-2 font-bold whitespace-nowrap">Route</th>
+                      <th className="px-3 py-2 font-bold whitespace-nowrap">Driver</th>
+                      {visibleCols.includes('feasibility') && <th className="px-3 py-2 font-bold text-center whitespace-nowrap">Feasibility</th>}
+                      {visibleCols.includes('viewOnMap') && <th className="px-3 py-2 font-bold text-center whitespace-nowrap">View on Map</th>}
+                      {visibleCols.includes('loadOrion') && <th className="px-3 py-2 font-bold text-center whitespace-nowrap">Load ORION</th>}
+                      {visibleCols.includes('leaveBuildingTime') && <th className="px-3 py-2 font-bold text-center whitespace-nowrap">Leave Building Time</th>}
+                      {visibleCols.includes('stops') && <th className="px-3 py-2 font-bold text-right whitespace-nowrap">Stops</th>}
+                      {visibleCols.includes('packages') && <th className="px-3 py-2 font-bold text-right whitespace-nowrap">Packages</th>}
+                      {visibleCols.includes('hours') && <th className="px-3 py-2 font-bold text-right whitespace-nowrap">Hours</th>}
+                      {visibleCols.includes('miles') && <th className="px-3 py-2 font-bold text-right whitespace-nowrap">Miles</th>}
+                      {visibleCols.includes('eows') && <th className="px-3 py-2 font-bold text-right whitespace-nowrap">EOW's</th>}
+                      {visibleCols.includes('helperHours') && <th className="px-3 py-2 font-bold text-right whitespace-nowrap">Helper Hours</th>}
+                      <th className="w-full px-3 py-1 text-right relative col-filter-container z-50">
+                        <button 
+                          onClick={() => setIsColFilterOpen(!isColFilterOpen)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1 bg-white border border-gray-200 rounded text-xs font-bold text-gray-600 shadow-sm hover:bg-gray-100 transition-colors normal-case"
                         >
-                          Route <Filter size={12} className={routeFilters.length > 0 ? "text-blue-600" : ""} />
-                        </div>
-                        {isRouteFilterOpen && (
-                          <div className="absolute top-full left-2 mt-1 bg-white border border-gray-200 shadow-lg rounded-md p-2 z-50 min-w-[140px]">
-                            <div className="text-[10px] font-bold text-gray-400 mb-2 uppercase">Filter Routes</div>
-                            <div className="max-h-40 overflow-y-auto space-y-1">
-                              {planRoutes.map(r => (
-                                <label key={r.id} className="flex items-center gap-2 text-xs py-1 px-1 cursor-pointer hover:bg-gray-50 rounded">
-                                  <input 
-                                    type="checkbox" 
-                                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                                    checked={routeFilters.includes(r.id)}
-                                    onChange={() => toggleRouteFilter(r.id)}
-                                  />
-                                  <span className="font-medium text-gray-700">{r.name}</span>
-                                </label>
-                              ))}
+                          <Filter size={12} /> Filter
+                        </button>
+                        {isColFilterOpen && (
+                          <div className="absolute top-full right-2 mt-1 w-48 bg-white border border-gray-200 shadow-xl rounded-lg py-2 z-50 text-left">
+                            <div className="px-4 pb-2 mb-2 border-b border-gray-100 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                              Toggle Columns
                             </div>
-                            {routeFilters.length > 0 && (
-                              <div className="border-t mt-2 pt-2 flex justify-end">
-                                <button onClick={() => setRouteFilters([])} className="text-[10px] text-blue-600 font-bold hover:underline">Clear All</button>
-                              </div>
-                            )}
+                            {[
+                              { id: 'feasibility', label: 'Feasibility' },
+                              { id: 'viewOnMap', label: 'View on Map' },
+                              { id: 'loadOrion', label: 'Load ORION' },
+                              { id: 'leaveBuildingTime', label: 'Leave Building Time' },
+                              { id: 'stops', label: 'Stops' },
+                              { id: 'packages', label: 'Packages' },
+                              { id: 'hours', label: 'Hours' },
+                              { id: 'miles', label: 'Miles' },
+                              { id: 'eows', label: "EOW's" },
+                              { id: 'helperHours', label: 'Helper Hours' },
+                            ].map(col => (
+                              <label key={col.id} className="flex items-center gap-2 px-4 py-1.5 text-sm font-medium hover:bg-gray-50 cursor-pointer">
+                                <input 
+                                  type="checkbox" 
+                                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                  checked={visibleCols.includes(col.id)}
+                                  onChange={() => toggleCol(col.id)}
+                                />
+                                <span className="text-gray-700">{col.label}</span>
+                              </label>
+                            ))}
                           </div>
                         )}
                       </th>
-
-                      <th className="px-3 py-2 font-bold text-center whitespace-nowrap">Feasibility</th>
-                      <th className="px-3 py-2 font-bold text-center whitespace-nowrap">View on Map</th>
-                      <th className="px-3 py-2 font-bold text-center whitespace-nowrap">Load ORION</th>
-                      <th className="px-3 py-2 font-bold text-right whitespace-nowrap">Stops</th>
-                      <th className="px-3 py-2 font-bold text-right whitespace-nowrap">Packages</th>
-                      <th className="px-3 py-2 font-bold text-right whitespace-nowrap">Hours</th>
-                      <th className="px-3 py-2 font-bold text-right whitespace-nowrap">Miles</th>
-                      <th className="w-full"></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 text-gray-700">
                     {displayedRoutes.map((r) => (
                       <tr key={r.id} className="hover:bg-gray-50">
                         <td className="px-3 py-2 font-bold">{r.name}</td>
-                        <td className="px-3 py-2 text-center">
-                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase whitespace-nowrap ${
-                            r.feasibility === 'Feasible' ? 'bg-green-100 text-green-700' : 
-                            r.feasibility === 'Risk Feasible' ? 'bg-amber-100 text-amber-700' : 
-                            'bg-red-100 text-red-700'
-                          }`}>
-                            {r.feasibility}
-                          </span>
-                        </td>
-                        <td className="px-3 py-2 text-center">
-                          <input type="checkbox" className="w-4 h-4 cursor-pointer text-blue-600 rounded focus:ring-blue-500" checked={selectedRouteIds.includes(r.id)} onChange={() => toggleRouteSelection(r.id)} />
-                        </td>
-                        <td className="px-3 py-2 text-center">
-                          <button 
-                            className="px-3 py-1 text-xs font-bold text-white rounded whitespace-nowrap bg-blue-600 hover:bg-blue-700 active:scale-95 transition-all shadow-sm"
-                            onClick={() => console.log(`ORION Loaded for ${r.name}`)}
-                          >
-                            Load ORION
-                          </button>
-                        </td>
-                        <td className="px-3 py-2 text-right">{r.stops}</td>
-                        <td className="px-3 py-2 text-right">{r.packages}</td>
-                        <td className="px-3 py-2 text-right">{r.hours}</td>
-                        <td className="px-3 py-2 text-right">{r.miles.toFixed(1)}</td>
+                        <td className="px-3 py-2 text-gray-600 font-medium whitespace-nowrap">{r.driver}</td>
+                        {visibleCols.includes('feasibility') && (
+                          <td className="px-3 py-2 text-center">
+                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase whitespace-nowrap ${
+                              r.feasibility === 'Feasible' ? 'bg-green-100 text-green-700' : 
+                              r.feasibility === 'Risk Feasible' ? 'bg-amber-100 text-amber-700' : 
+                              'bg-red-100 text-red-700'
+                            }`}>
+                              {r.feasibility}
+                            </span>
+                          </td>
+                        )}
+                        {visibleCols.includes('viewOnMap') && (
+                          <td className="px-3 py-2 text-center">
+                            <input type="checkbox" className="w-4 h-4 cursor-pointer text-blue-600 rounded focus:ring-blue-500" checked={selectedRouteIds.includes(r.id)} onChange={() => toggleRouteSelection(r.id)} />
+                          </td>
+                        )}
+                        {visibleCols.includes('loadOrion') && (
+                          <td className="px-3 py-2 text-center">
+                            <button 
+                              className="px-3 py-1 text-xs font-bold text-white rounded whitespace-nowrap bg-blue-600 hover:bg-blue-700 active:scale-95 transition-all shadow-sm"
+                              onClick={() => console.log(`ORION Loaded for ${r.name}`)}
+                            >
+                              Load ORION
+                            </button>
+                          </td>
+                        )}
+                        {visibleCols.includes('leaveBuildingTime') && (
+                          <td className="px-3 py-2 text-center font-medium whitespace-nowrap">{r.leaveBuildingTime}</td>
+                        )}
+                        {visibleCols.includes('stops') && (
+                          <td className="px-3 py-2 text-right">{r.stops}</td>
+                        )}
+                        {visibleCols.includes('packages') && (
+                          <td className="px-3 py-2 text-right">{r.packages}</td>
+                        )}
+                        {visibleCols.includes('hours') && (
+                          <td className="px-3 py-2 text-right">{r.hours}</td>
+                        )}
+                        {visibleCols.includes('miles') && (
+                          <td className="px-3 py-2 text-right">{r.miles.toFixed(1)}</td>
+                        )}
+                        {visibleCols.includes('eows') && (
+                          <td className="px-3 py-2 text-right">{r.eows}</td>
+                        )}
+                        {visibleCols.includes('helperHours') && (
+                          <td className="px-3 py-2 text-right">{r.helperHours}</td>
+                        )}
                         <td className="w-full"></td>
                       </tr>
                     ))}
                     {displayedRoutes.length === 0 && (
                       <tr>
-                        <td colSpan="9" className="px-4 py-8 text-center text-gray-400 font-medium text-sm">
+                        <td colSpan="13" className="px-4 py-8 text-center text-gray-400 font-medium text-sm">
                           No routes match the selected filter.
                         </td>
                       </tr>
@@ -472,35 +583,61 @@ const App = () => {
             <section className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col">
               <div className="px-4 py-3 border-b bg-gray-50 text-xs font-bold text-gray-500 uppercase flex justify-between tracking-widest"><span>Before</span></div>
               <div className="h-[350px] relative">
-                <RouteMap routes={currentVar.routesBefore} />
+                <RouteMap routes={filteredRoutesBefore} />
                 <div className="absolute top-2 right-2 flex flex-col gap-1 z-[400]">
                   {currentVar.beforeStats.map(stat => (
-                    <span key={stat.id} style={{ color: stat.color, borderColor: stat.color + '40' }} className="bg-white/90 px-2 py-1 text-[10px] font-bold rounded shadow border">
-                      {stat.id}
-                    </span>
+                    <label 
+                      key={stat.id} 
+                      style={{ color: stat.color, borderColor: stat.color + '40' }} 
+                      className="bg-white/90 px-2 py-1 text-[10px] font-bold rounded shadow border flex items-center gap-1.5 cursor-pointer hover:bg-white transition-colors"
+                    >
+                      <input 
+                        type="checkbox" 
+                        className="w-2.5 h-2.5 cursor-pointer rounded-sm"
+                        checked={!hiddenMapRoutes.includes(stat.id)}
+                        onChange={() => toggleMapRouteVisibility(stat.id)}
+                      />
+                      <span>{stat.id}</span>
+                    </label>
                   ))}
                 </div>
               </div>
               <div className="border-t">
-                <table className="w-full text-left text-xs">
+                <table className="w-full text-left text-xs table-fixed">
                   <thead className="bg-gray-50 text-gray-500 uppercase font-bold border-b">
-                    <tr><th className="px-3 py-2">Route</th><th className="px-2 py-2 text-right">Miles</th><th className="px-2 py-2 text-right">Cost</th><th className="px-3 py-2 text-center">Status</th></tr>
+                    <tr>
+                      <th className="px-3 py-2 w-[16%]">Route</th>
+                      <th className="px-2 py-2 w-[24%]">Driver</th>
+                      <th className="px-2 py-2 text-right w-[18%]">Miles</th>
+                      <th className="px-2 py-2 text-right w-[20%]">Cost</th>
+                      <th className="px-3 py-2 text-center w-[22%]">Status</th>
+                    </tr>
                   </thead>
                   <tbody className="divide-y font-medium text-gray-700">
                     {currentVar.beforeStats.map(stat => (
                       <tr key={stat.id}>
-                        <td className="px-3 py-2 flex items-center gap-2">
-                          <div className={`w-2 h-2 rounded-full`} style={{ backgroundColor: stat.color }}></div> {stat.id}
+                        <td className="px-3 py-2 flex items-center gap-2 truncate">
+                          <div className={`w-2 h-2 rounded-full flex-shrink-0`} style={{ backgroundColor: stat.color }}></div> {stat.id}
                         </td>
-                        <td className="px-2 py-2 text-right">{stat.miles.toFixed(1)}</td>
-                        <td className="px-2 py-2 text-right">${stat.cost.toLocaleString()}</td>
-                        <td className={`px-3 py-2 text-center ${stat.isRed ? 'text-red-600 font-bold bg-red-50' : 'text-green-600'}`}>{stat.status}</td>
+                        <td className="px-2 py-2 truncate text-gray-600 font-medium">{stat.driver}</td>
+                        <td className="px-2 py-2 text-right truncate">{stat.miles.toFixed(1)}</td>
+                        <td className="px-2 py-2 text-right truncate">${stat.cost.toLocaleString()}</td>
+                        <td className="px-3 py-2 text-center truncate">
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase whitespace-nowrap ${
+                            stat.status === 'Feasible' ? 'bg-green-100 text-green-700' : 
+                            stat.status === 'Risk Feasible' ? 'bg-amber-100 text-amber-700' : 
+                            'bg-red-100 text-red-700'
+                          }`}>
+                            {stat.status}
+                          </span>
+                        </td>
                       </tr>
                     ))}
                     <tr className="bg-gray-50 font-bold border-t-2">
-                      <td className="px-3 py-2">TOTAL</td>
-                      <td className="px-2 py-2 text-right">{currentVar.totalsBefore.miles.toFixed(1)}</td>
-                      <td className="px-2 py-2 text-right">${currentVar.totalsBefore.cost.toLocaleString()}</td>
+                      <td className="px-3 py-2 truncate">TOTAL</td>
+                      <td className="px-2 py-2 truncate"></td>
+                      <td className="px-2 py-2 text-right truncate">{currentVar.totalsBefore.miles.toFixed(1)}</td>
+                      <td className="px-2 py-2 text-right truncate">${currentVar.totalsBefore.cost.toLocaleString()}</td>
                       <td className="px-3 py-2 text-center"></td>
                     </tr>
                   </tbody>
@@ -508,40 +645,66 @@ const App = () => {
               </div>
             </section>
 
-            <section className="bg-white rounded-xl border-blue-200 border-2 shadow-md overflow-hidden flex flex-col">
-              <div className="px-4 py-3 border-b bg-blue-50 text-xs font-bold text-blue-700 uppercase flex justify-between tracking-widest"><span>After</span></div>
+            <section className="bg-white rounded-xl border border-gray-200 shadow-md overflow-hidden flex flex-col">
+              <div className="px-4 py-3 border-b bg-gray-50 text-xs font-bold text-gray-500 uppercase flex justify-between tracking-widest"><span>After</span></div>
               <div className="h-[350px] relative">
-                <RouteMap routes={currentVar.routesAfter} />
+                <RouteMap routes={filteredRoutesAfter} />
                 <div className="absolute top-2 right-2 flex flex-col gap-1 z-[400]">
                   {currentVar.afterStats.map(stat => (
-                    <span key={stat.id} style={{ backgroundColor: stat.color }} className="text-white px-2 py-1 text-[10px] font-bold rounded shadow">
-                      {stat.id}
-                    </span>
+                    <label 
+                      key={stat.id} 
+                      style={{ color: stat.color, borderColor: stat.color + '40' }} 
+                      className="bg-white/90 px-2 py-1 text-[10px] font-bold rounded shadow border flex items-center gap-1.5 cursor-pointer hover:bg-white transition-colors"
+                    >
+                      <input 
+                        type="checkbox" 
+                        className="w-2.5 h-2.5 cursor-pointer rounded-sm"
+                        checked={!hiddenMapRoutes.includes(stat.id)}
+                        onChange={() => toggleMapRouteVisibility(stat.id)}
+                      />
+                      <span>{stat.id}</span>
+                    </label>
                   ))}
                 </div>
               </div>
               <div className="border-t">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-blue-50/50 text-blue-800 uppercase font-bold border-b">
-                    <tr><th className="px-3 py-2">Route</th><th className="px-2 py-2 text-right">Miles</th><th className="px-2 py-2 text-right">Cost</th><th className="px-3 py-2 text-center">Status</th></tr>
+                <table className="w-full text-left text-xs table-fixed">
+                  <thead className="bg-gray-50 text-gray-500 uppercase font-bold border-b">
+                    <tr>
+                      <th className="px-3 py-2 w-[16%]">Route</th>
+                      <th className="px-2 py-2 w-[24%]">Driver</th>
+                      <th className="px-2 py-2 text-right w-[18%]">Miles</th>
+                      <th className="px-2 py-2 text-right w-[20%]">Cost</th>
+                      <th className="px-3 py-2 text-center w-[22%]">Status</th>
+                    </tr>
                   </thead>
                   <tbody className="divide-y font-medium text-gray-700">
                     {currentVar.afterStats.map(stat => (
                       <tr key={stat.id}>
-                        <td className="px-3 py-2 flex items-center gap-2">
-                          <div className={`w-2 h-2 rounded-full`} style={{ backgroundColor: stat.color }}></div> {stat.id}
+                        <td className="px-3 py-2 flex items-center gap-2 truncate">
+                          <div className={`w-2 h-2 rounded-full flex-shrink-0`} style={{ backgroundColor: stat.color }}></div> {stat.id}
                         </td>
-                        <td className="px-2 py-2 text-right">{stat.miles.toFixed(1)}</td>
-                        <td className="px-2 py-2 text-right">${stat.cost.toLocaleString()}</td>
-                        <td className={`px-3 py-2 text-center ${stat.isRed ? 'text-red-600 font-bold bg-red-50' : 'text-green-700'}`}>{stat.status}</td>
+                        <td className="px-2 py-2 truncate text-gray-600 font-medium">{stat.driver}</td>
+                        <td className="px-2 py-2 text-right truncate">{stat.miles.toFixed(1)}</td>
+                        <td className="px-2 py-2 text-right truncate">${stat.cost.toLocaleString()}</td>
+                        <td className="px-3 py-2 text-center truncate">
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase whitespace-nowrap ${
+                            stat.status === 'Feasible' ? 'bg-green-100 text-green-700' : 
+                            stat.status === 'Risk Feasible' ? 'bg-amber-100 text-amber-700' : 
+                            'bg-red-100 text-red-700'
+                          }`}>
+                            {stat.status}
+                          </span>
+                        </td>
                       </tr>
                     ))}
-                    <tr className="bg-blue-50/30 font-bold border-t-2">
-                      <td className="px-3 py-2">TOTAL</td>
-                      <td className="px-2 py-2 text-right text-green-700">
+                    <tr className="bg-gray-50 font-bold border-t-2">
+                      <td className="px-3 py-2 truncate">TOTAL</td>
+                      <td className="px-2 py-2 truncate"></td>
+                      <td className="px-2 py-2 text-right text-green-700 truncate">
                         {currentVar.totalsAfter.miles.toFixed(1)} ({currentVar.totalsAfter.milesDiff})
                       </td>
-                      <td className="px-2 py-2 text-right text-green-700">
+                      <td className="px-2 py-2 text-right text-green-700 truncate">
                         ${currentVar.totalsAfter.cost.toLocaleString()} ({currentVar.totalsAfter.costDiff})
                       </td>
                       <td className="px-3 py-2 text-center"></td>
