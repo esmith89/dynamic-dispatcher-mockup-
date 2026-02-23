@@ -319,6 +319,7 @@ const App = () => {
     { id: '08C', name: '08C', driver: 'K. Snyder', defaultFeasibility: 'Feasible', leaveBuildingTime: '8:50', stops: 109, packages: 128, hours: 7.8, defaultMiles: 75.3, eows: 0, helperHours: 0 },
   ];
 
+  // Map over ALL routes to display them in the Route Overview, using updated stats if they are involved in the DD
   const planRoutes = basePlanRoutes.map(r => {
     const isFocused = currentVar.mapRoutes.includes(r.id);
     const afterStat = currentVar.afterStats.find(s => s.id === r.id);
@@ -327,7 +328,7 @@ const App = () => {
       feasibility: isFocused ? afterStat.status : r.defaultFeasibility,
       miles: isFocused ? afterStat.miles : r.defaultMiles
     };
-  }).filter(r => currentVar.mapRoutes.includes(r.id)); // Only display routes involved in DD in Overview table
+  }); 
 
   useEffect(() => {
     // Reset map filters on kickoff change to only show routes involved in the active DD
