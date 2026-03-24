@@ -85,6 +85,10 @@ const App = () => {
   // Modal State
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
 
+  // Kickoffs Header Buttons / Modals
+  const [isManualKickoffNoticeOpen, setIsManualKickoffNoticeOpen] = useState(false);
+  const [isAddRemoveRouteOpen, setIsAddRemoveRouteOpen] = useState(false);
+
   // Location Dropdown State
   const [isCenterDropdownOpen, setIsCenterDropdownOpen] = useState(false);
   const centerOptions = [
@@ -345,6 +349,23 @@ const App = () => {
     };
   }); 
 
+  // Rank routes from most feasible to cut to least feasible to cut based on route stats (lowest workload first)
+  const cutRouteRanking = useMemo(() => {
+    const copy = [...planRoutes];
+    return copy.sort((a, b) => {
+      const byHours = (a.hours ?? 0) - (b.hours ?? 0);
+      if (byHours !== 0) return byHours;
+
+      const byStops = (a.stops ?? 0) - (b.stops ?? 0);
+      if (byStops !== 0) return byStops;
+
+      const byMiles = (a.miles ?? 0) - (b.miles ?? 0);
+      if (byMiles !== 0) return byMiles;
+
+      return (a.name ?? '').localeCompare(b.name ?? '');
+    });
+  }, [planRoutes]);
+
   useEffect(() => {
     // Reset map filters on kickoff change to only show routes involved in the active DD
     setVisibleMapRoutes(currentVar.mapRoutes);
@@ -408,11 +429,106 @@ const App = () => {
         </div>
       )}
 
+      {/* Manual Kickoff Notice Modal */}
+      {isManualKickoffNoticeOpen && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black bg-opacity-40 transition-opacity">
+          <div className="bg-white rounded-xl p-6 shadow-2xl max-w-sm w-full border border-gray-200">
+            <h3 className="text-lg font-bold text-gray-800 mb-3">Manual Kickoff</h3>
+            <p className="text-sm text-gray-600 mb-6 leading-relaxed">
+              Cannot Manually Kickoff, Dynamic Dispatcher is  currently running. Try again later if needed
+            </p>
+            <div className="flex justify-end">
+              <button
+                onClick={() => setIsManualKickoffNoticeOpen(false)}
+                className="px-4 py-2 text-xs font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add/Remove Route Modal */}
+      {isAddRemoveRouteOpen && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black bg-opacity-40 transition-opacity">
+          <div className="bg-white rounded-xl p-6 shadow-2xl max-w-2xl w-full border border-gray-200">
+            <div className="flex items-start justify-between gap-4 mb-4">
+              <div>
+                <h3 className="text-lg font-bold text-gray-800">Add/Remove Route</h3>
+                <p className="text-xs text-gray-500 mt-1">
+                  Routes ranked from most feasible to cut to least feasible to cut based on route stats.
+                </p>
+              </div>
+              <button
+                onClick={() => setIsAddRemoveRouteOpen(false)}
+                className="px-4 py-2 text-xs font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="border rounded-lg overflow-hidden">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-gray-50 border-b">
+                  <tr className="text-[10px] uppercase font-bold text-gray-500">
+                    <th className="px-3 py-2 w-10">#</th>
+                    <th className="px-3 py-2">Route</th>
+                    <th className="px-3 py-2">Driver</th>
+                    <th className="px-3 py-2 text-right">Hrs</th>
+                    <th className="px-3 py-2 text-right">Stops</th>
+                    <th className="px-3 py-2 text-right">Miles</th>
+                    <th className="px-3 py-2 text-center">Feasibility</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {cutRouteRanking.map((r, idx) => (
+                    <tr key={r.id} className="hover:bg-gray-50">
+                      <td className="px-3 py-2 text-gray-400 font-bold">{idx + 1}</td>
+                      <td className="px-3 py-2 font-bold text-gray-800">{r.id}</td>
+                      <td className="px-3 py-2 text-gray-600">{r.driver}</td>
+                      <td className="px-3 py-2 text-right text-gray-700">{Number(r.hours).toFixed(1)}</td>
+                      <td className="px-3 py-2 text-right text-gray-700">{r.stops}</td>
+                      <td className="px-3 py-2 text-right text-gray-700">{Number(r.miles).toFixed(1)}</td>
+                      <td className="px-3 py-2 text-center">
+                        <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase whitespace-nowrap ${
+                          r.feasibility === 'Feasible' ? 'bg-green-100 text-green-700' :
+                          r.feasibility === 'Risk Feasible' ? 'bg-amber-100 text-amber-700' :
+                          'bg-red-100 text-red-700'
+                        }`}>
+                          {r.feasibility}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+          </div>
+        </div>
+      )}
+
       <div className="w-1/3 min-w-[350px] bg-white border-r border-gray-300 flex flex-col z-20 shadow-xl">
         <div className="flex flex-col h-1/2 border-b-4 border-gray-200">
-          <div className="h-14 border-b border-gray-200 flex items-center px-4 font-bold text-gray-700 bg-gray-50 flex-shrink-0">
-            Kickoffs
+          <div className="h-14 border-b border-gray-200 flex items-center px-4 font-bold text-gray-700 bg-gray-50 flex-shrink-0 justify-between">
+            <span>Kickoffs</span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setIsManualKickoffNoticeOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white rounded-md shadow-sm transition-all flex-shrink-0 bg-blue-600 hover:bg-blue-700 active:scale-95"
+              >
+                Manual Kickoff
+              </button>
+              <button
+                onClick={() => setIsAddRemoveRouteOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white rounded-md shadow-sm transition-all flex-shrink-0 bg-blue-600 hover:bg-blue-700 active:scale-95"
+              >
+                Add/Remove Route
+              </button>
+            </div>
           </div>
+
           <div className="flex-1 overflow-y-auto">
             {kickoffs.map((k) => (
               <div key={k.id} onClick={() => setActiveKickoffId(k.id)} className={`p-4 border-b cursor-pointer transition-colors ${activeKickoffId === k.id ? 'bg-blue-50 border-l-4 border-l-blue-500' : 'hover:bg-gray-50'}`}>
@@ -444,6 +560,7 @@ const App = () => {
             ))}
           </div>
         </div>
+
         <div className="flex flex-col h-1/2 bg-gray-50">
           <div className="p-3 border-b border-gray-200 bg-white flex justify-between items-center h-auto min-h-[56px]">
             <div className="flex items-center gap-2 flex-wrap">
