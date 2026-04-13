@@ -65,17 +65,17 @@ const baseRoutesInfo = [
 
 const App = () => {
   const [kickoffs] = useState([
-    { id: '09:20_02182026_DD_11_4780', displayTime: '09:20 AM', status: 'Currently Running', date: 'Feb 18' },
-    { id: '09:00_02182026_DD_10_4780', displayTime: '09:00 AM', status: 'Planning',  date: 'Feb 18', needsAttention: true },
-    { id: '08:42_02182026_DD_09_4780', displayTime: '08:42 AM', status: 'Expired',   date: 'Feb 18' },
-    { id: '08:15_02182026_DD_08_4780', displayTime: '08:15 AM', status: 'Completed', date: 'Feb 18' },
-    { id: '07:48_02182026_DD_07_4780', displayTime: '07:48 AM', status: 'Expired',   date: 'Feb 18' },
-    { id: '07:20_02182026_DD_06_4780', displayTime: '07:20 AM', status: 'Completed', date: 'Feb 18' },
-    { id: '06:55_02182026_DD_05_4780', displayTime: '06:55 AM', status: 'Completed', date: 'Feb 18' },
-    { id: '06:10_02182026_DD_04_4780', displayTime: '06:10 AM', status: 'Expired',   date: 'Feb 18' },
-    { id: '05:35_02182026_DD_03_4780', displayTime: '05:35 AM', status: 'Completed', date: 'Feb 18' },
-    { id: '04:50_02182026_DD_02_4780', displayTime: '04:50 AM', status: 'Expired',   date: 'Feb 18' },
-    { id: '03:30_02182026_DD_01_4780', displayTime: '03:30 AM', status: 'Completed', date: 'Feb 18' },
+    { id: '09:20_02182026_DD_11_4780', displayTime: '09:20 AM', status: 'Currently Running', date: 'Feb 18', scope: 'Centerwide' },
+    { id: '09:00_02182026_DD_10_4780', displayTime: '09:00 AM', status: 'Planning',  date: 'Feb 18', needsAttention: true, scope: 'Centerwide' },
+    { id: '08:42_02182026_DD_09_4780', displayTime: '08:42 AM', status: 'Expired',   date: 'Feb 18', scope: 'Centerwide' },
+    { id: '08:15_02182026_DD_08_4780', displayTime: '08:15 AM', status: 'Completed', date: 'Feb 18', scope: 'Localized' },
+    { id: '07:48_02182026_DD_07_4780', displayTime: '07:48 AM', status: 'Expired',   date: 'Feb 18', scope: 'Centerwide' },
+    { id: '07:20_02182026_DD_06_4780', displayTime: '07:20 AM', status: 'Completed', date: 'Feb 18', scope: 'Localized' },
+    { id: '06:55_02182026_DD_05_4780', displayTime: '06:55 AM', status: 'Completed', date: 'Feb 18', scope: 'Centerwide' },
+    { id: '06:10_02182026_DD_04_4780', displayTime: '06:10 AM', status: 'Expired',   date: 'Feb 18', scope: 'Centerwide' },
+    { id: '05:35_02182026_DD_03_4780', displayTime: '05:35 AM', status: 'Completed', date: 'Feb 18', scope: 'Centerwide' },
+    { id: '04:50_02182026_DD_02_4780', displayTime: '04:50 AM', status: 'Expired',   date: 'Feb 18', scope: 'Centerwide' },
+    { id: '03:30_02182026_DD_01_4780', displayTime: '03:30 AM', status: 'Completed', date: 'Feb 18', scope: 'Centerwide' },
   ]);
 
   const [activeKickoffId, setActiveKickoffId] = useState(kickoffs[0].id);
@@ -87,7 +87,12 @@ const App = () => {
 
   // Kickoffs Header Buttons / Modals
   const [isManualKickoffNoticeOpen, setIsManualKickoffNoticeOpen] = useState(false);
-  const [isAddRemoveRouteOpen, setIsAddRemoveRouteOpen] = useState(false);
+  const [isRemoveRouteOpen, setIsRemoveRouteOpen] = useState(false);
+  const [isAddRouteOpen, setIsAddRouteOpen] = useState(false);
+
+  // Selection states for Modals
+  const [selectedRouteToCut, setSelectedRouteToCut] = useState(null);
+  const [selectedLoopToAdd, setSelectedLoopToAdd] = useState(null);
 
   // Location Dropdown State
   const [isCenterDropdownOpen, setIsCenterDropdownOpen] = useState(false);
@@ -152,7 +157,12 @@ const App = () => {
 
     // GENERATE VARIATIONS
     for (let k = 0; k < 11; k++) {
-      const numRoutes = Math.floor(rnd() * 7) + 2; 
+      const kickoffScope = kickoffs[k].scope;
+      const isLocalized = kickoffScope === 'Localized';
+
+      // NEW LOGIC: Localized only gets 2-3 routes, Centerwide gets 2-8
+      const numRoutes = isLocalized ? (Math.floor(rnd() * 2) + 2) : (Math.floor(rnd() * 7) + 2); 
+      
       const shuffledBase = [...baseRoutesInfo].sort(() => rnd() - 0.5);
       
       const subset = [shuffledBase[0]];
@@ -181,20 +191,27 @@ const App = () => {
         if (validNeighbors.length === 0) continue; 
         const toRoute = validNeighbors[Math.floor(rnd() * validNeighbors.length)];
 
-        const isSingleAddress = rnd() < 0.35;
+        let isSingleAddress = rnd() < 0.35;
         const street = streetNames[Math.floor(rnd() * streetNames.length)];
         const startNum = Math.floor(rnd() * 2000) + 100;
         
         let stopsCount = 1;
         let addressDisplay = "";
 
-        if (isSingleAddress) {
-          addressDisplay = `${startNum} ${street}`;
-          stopsCount = 1;
+        // NEW LOGIC: Adjust stops moved based on scope
+        if (isLocalized) {
+          stopsCount = Math.floor(rnd() * 3) + 1; // 1 to 3 stops
+          addressDisplay = stopsCount === 1 ? `${startNum} ${street}` : `${startNum} - ${startNum + (stopsCount * 4)} ${street}`;
+          isSingleAddress = stopsCount === 1;
         } else {
-          const endNum = startNum + Math.floor(rnd() * 100) + 10;
-          addressDisplay = `${startNum} - ${endNum} ${street}`;
-          stopsCount = Math.floor(rnd() * 4) + 2; 
+          if (isSingleAddress) {
+            addressDisplay = `${startNum} ${street}`;
+            stopsCount = 1;
+          } else {
+            const endNum = startNum + Math.floor(rnd() * 100) + 10;
+            addressDisplay = `${startNum} - ${endNum} ${street}`;
+            stopsCount = Math.floor(rnd() * 4) + 2; 
+          }
         }
 
         const transKey = `${fromRoute.id}->${toRoute.id}`;
@@ -435,7 +452,7 @@ const App = () => {
           <div className="bg-white rounded-xl p-6 shadow-2xl max-w-sm w-full border border-gray-200">
             <h3 className="text-lg font-bold text-gray-800 mb-3">Manual Kickoff</h3>
             <p className="text-sm text-gray-600 mb-6 leading-relaxed">
-              Cannot Manually Kickoff, Dynamic Dispatcher is  currently running. Try again later if needed
+              Cannot manually kickoff. Dynamic Dispatcher is currently running.
             </p>
             <div className="flex justify-end">
               <button
@@ -449,30 +466,33 @@ const App = () => {
         </div>
       )}
 
-      {/* Add/Remove Route Modal */}
-      {isAddRemoveRouteOpen && (
+      {/* Remove Route Modal */}
+      {isRemoveRouteOpen && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black bg-opacity-40 transition-opacity">
-          <div className="bg-white rounded-xl p-6 shadow-2xl max-w-2xl w-full border border-gray-200">
+          <div className="bg-white rounded-xl p-6 shadow-2xl max-w-2xl w-full border border-gray-200 flex flex-col max-h-[90vh]">
             <div className="flex items-start justify-between gap-4 mb-4">
               <div>
-                <h3 className="text-lg font-bold text-gray-800">Add/Remove Route</h3>
+                <h3 className="text-lg font-bold text-gray-800">Remove Route</h3>
                 <p className="text-xs text-gray-500 mt-1">
-                  Routes ranked from most feasible to cut to least feasible to cut based on route stats.
+                  Routes ranked from most feasible to cut to least feasible to cut based on route stats. Select a route to remove.
                 </p>
               </div>
               <button
-                onClick={() => setIsAddRemoveRouteOpen(false)}
-                className="px-4 py-2 text-xs font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
+                onClick={() => {
+                  setIsRemoveRouteOpen(false);
+                  setSelectedRouteToCut(null);
+                }}
+                className="px-3 py-1.5 text-xs font-bold text-gray-500 hover:text-gray-800 transition-colors"
               >
-                Close
+                X
               </button>
             </div>
 
-            <div className="border rounded-lg overflow-hidden">
+            <div className="border rounded-lg overflow-y-auto flex-1">
               <table className="w-full text-left text-xs">
-                <thead className="bg-gray-50 border-b">
+                <thead className="bg-gray-50 border-b sticky top-0 z-10">
                   <tr className="text-[10px] uppercase font-bold text-gray-500">
-                    <th className="px-3 py-2 w-10">#</th>
+                    <th className="px-3 py-2 w-10 text-center">Select</th>
                     <th className="px-3 py-2">Route</th>
                     <th className="px-3 py-2">Driver</th>
                     <th className="px-3 py-2 text-right">Hrs</th>
@@ -482,29 +502,126 @@ const App = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {cutRouteRanking.map((r, idx) => (
-                    <tr key={r.id} className="hover:bg-gray-50">
-                      <td className="px-3 py-2 text-gray-400 font-bold">{idx + 1}</td>
-                      <td className="px-3 py-2 font-bold text-gray-800">{r.id}</td>
-                      <td className="px-3 py-2 text-gray-600">{r.driver}</td>
-                      <td className="px-3 py-2 text-right text-gray-700">{Number(r.hours).toFixed(1)}</td>
-                      <td className="px-3 py-2 text-right text-gray-700">{r.stops}</td>
-                      <td className="px-3 py-2 text-right text-gray-700">{Number(r.miles).toFixed(1)}</td>
-                      <td className="px-3 py-2 text-center">
-                        <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase whitespace-nowrap ${
-                          r.feasibility === 'Feasible' ? 'bg-green-100 text-green-700' :
-                          r.feasibility === 'Risk Feasible' ? 'bg-amber-100 text-amber-700' :
-                          'bg-red-100 text-red-700'
-                        }`}>
-                          {r.feasibility}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
+                  {cutRouteRanking.map((r, idx) => {
+                    const isSelected = selectedRouteToCut === r.id;
+                    return (
+                      <tr 
+                        key={r.id} 
+                        onClick={() => setSelectedRouteToCut(r.id)}
+                        className={`cursor-pointer transition-colors ${isSelected ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
+                      >
+                        <td className="px-3 py-2 text-center">
+                          {isSelected ? (
+                            <Check size={16} className="text-blue-600 inline-block" strokeWidth={3} />
+                          ) : (
+                            <span className="text-gray-300 font-bold">{idx + 1}</span>
+                          )}
+                        </td>
+                        <td className={`px-3 py-2 font-bold ${isSelected ? 'text-blue-800' : 'text-gray-800'}`}>{r.id}</td>
+                        <td className="px-3 py-2 text-gray-600">{r.driver}</td>
+                        <td className="px-3 py-2 text-right text-gray-700">{Number(r.hours).toFixed(1)}</td>
+                        <td className="px-3 py-2 text-right text-gray-700">{r.stops}</td>
+                        <td className="px-3 py-2 text-right text-gray-700">{Number(r.miles).toFixed(1)}</td>
+                        <td className="px-3 py-2 text-center">
+                          <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase whitespace-nowrap ${
+                            r.feasibility === 'Feasible' ? 'bg-green-100 text-green-700' :
+                            r.feasibility === 'Risk Feasible' ? 'bg-amber-100 text-amber-700' :
+                            'bg-red-100 text-red-700'
+                          }`}>
+                            {r.feasibility}
+                          </span>
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
 
+            <div className="flex justify-end gap-3 mt-4 pt-4 border-t border-gray-100">
+              <button
+                onClick={() => {
+                  setIsRemoveRouteOpen(false);
+                  setSelectedRouteToCut(null);
+                }}
+                className="px-4 py-2 text-xs font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  console.log('Selected route to cut:', selectedRouteToCut);
+                  setIsRemoveRouteOpen(false);
+                  setSelectedRouteToCut(null);
+                }}
+                disabled={!selectedRouteToCut}
+                className={`px-5 py-2 text-xs font-bold text-white rounded-md transition-colors shadow-sm ${
+                  selectedRouteToCut ? 'bg-blue-600 hover:bg-blue-700' : 'bg-blue-300 cursor-not-allowed'
+                }`}
+              >
+                Select
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Route Modal */}
+      {isAddRouteOpen && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black bg-opacity-40 transition-opacity">
+          <div className="bg-white rounded-xl p-6 shadow-2xl max-w-sm w-full border border-gray-200">
+            <h3 className="text-lg font-bold text-gray-800 mb-2">Add Route</h3>
+            <p className="text-sm text-gray-600 mb-5">Select a loop to add a new route to:</p>
+            
+            <div className="space-y-3 mb-6">
+              {['6 Loop', '7 Loop', '8 Loop'].map(loop => (
+                <label 
+                  key={loop} 
+                  className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
+                    selectedLoopToAdd === loop 
+                      ? 'bg-blue-50 border-blue-400 ring-1 ring-blue-400/20 shadow-sm' 
+                      : 'bg-white border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  <input 
+                    type="radio" 
+                    name="loopSelection" 
+                    value={loop} 
+                    checked={selectedLoopToAdd === loop}
+                    onChange={() => setSelectedLoopToAdd(loop)}
+                    className="text-blue-600 focus:ring-blue-500 h-4 w-4 border-gray-300"
+                  />
+                  <span className={`font-bold ${selectedLoopToAdd === loop ? 'text-blue-800' : 'text-gray-700'}`}>
+                    {loop}
+                  </span>
+                </label>
+              ))}
+            </div>
+
+            <div className="flex justify-end gap-3 pt-2 border-t border-gray-100">
+              <button 
+                onClick={() => {
+                  setIsAddRouteOpen(false);
+                  setSelectedLoopToAdd(null);
+                }}
+                className="px-4 py-2 text-xs font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={() => { 
+                  console.log('Adding route to:', selectedLoopToAdd); 
+                  setIsAddRouteOpen(false); 
+                  setSelectedLoopToAdd(null);
+                }}
+                disabled={!selectedLoopToAdd}
+                className={`px-5 py-2 text-xs font-bold text-white rounded-md transition-colors shadow-sm ${
+                  selectedLoopToAdd ? 'bg-blue-600 hover:bg-blue-700' : 'bg-blue-300 cursor-not-allowed'
+                }`}
+              >
+                Select
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -513,18 +630,24 @@ const App = () => {
         <div className="flex flex-col h-1/2 border-b-4 border-gray-200">
           <div className="h-14 border-b border-gray-200 flex items-center px-4 font-bold text-gray-700 bg-gray-50 flex-shrink-0 justify-between">
             <span>Kickoffs</span>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <button
                 onClick={() => setIsManualKickoffNoticeOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white rounded-md shadow-sm transition-all flex-shrink-0 bg-blue-600 hover:bg-blue-700 active:scale-95"
+                className="flex items-center gap-1.5 px-2 py-1.5 text-[10px] sm:text-xs font-bold text-white rounded-md shadow-sm transition-all flex-shrink-0 bg-blue-600 hover:bg-blue-700 active:scale-95"
               >
                 Manual Kickoff
               </button>
               <button
-                onClick={() => setIsAddRemoveRouteOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white rounded-md shadow-sm transition-all flex-shrink-0 bg-blue-600 hover:bg-blue-700 active:scale-95"
+                onClick={() => setIsRemoveRouteOpen(true)}
+                className="flex items-center gap-1.5 px-2 py-1.5 text-[10px] sm:text-xs font-bold text-white rounded-md shadow-sm transition-all flex-shrink-0 bg-blue-600 hover:bg-blue-700 active:scale-95"
               >
-                Add/Remove Route
+                Remove Route
+              </button>
+              <button
+                onClick={() => setIsAddRouteOpen(true)}
+                className="flex items-center gap-1.5 px-2 py-1.5 text-[10px] sm:text-xs font-bold text-white rounded-md shadow-sm transition-all flex-shrink-0 bg-blue-600 hover:bg-blue-700 active:scale-95"
+              >
+                Add Route
               </button>
             </div>
           </div>
@@ -554,7 +677,15 @@ const App = () => {
                 </div>
                 <div className="flex items-center gap-4 text-[10px] text-gray-500 font-medium">
                   <div className="flex items-center gap-1"><Calendar size={12} className="text-gray-400"/> {k.date}</div>
-                  <div className="flex items-center gap-1 text-blue-600 font-bold"><Clock size={12}/> {k.displayTime}</div>
+                  <div className="flex items-center gap-1 text-blue-600 font-bold">
+                    <Clock size={12}/> 
+                    <div className="flex items-center gap-1 text-blue-600 font-bold">
+                      {k.displayTime}
+                      <span className={`ml-1.5 px-1 py-0.5 text-[8px] rounded uppercase tracking-wider ${k.scope === 'Localized' ? 'bg-amber-100 text-amber-700 font-bold' : 'bg-gray-100 text-gray-600'}`}>
+                        {k.scope}
+                      </span>
+                    </div>
+                  </div>
                 </div>
               </div>
             ))}
